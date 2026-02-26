@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search, Clock, Dumbbell, ChevronRight, Plus, AlertCircle } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import { listWorkouts, type Workout } from '../../lib/api'
@@ -27,7 +28,7 @@ function getSectionType(workout: Workout): string {
 }
 
 function getTotalExercises(workout: Workout): number {
-  return workout.sections.reduce((sum, s) => sum + s.exercises.length, 0)
+  return workout.sections.reduce((sum, s) => sum + s.items.length, 0)
 }
 
 function WorkoutSkeleton() {
@@ -50,6 +51,7 @@ function WorkoutSkeleton() {
 }
 
 export function WorkoutsPage() {
+  const navigate = useNavigate()
   const [workouts, setWorkouts] = useState<Workout[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -172,7 +174,11 @@ export function WorkoutsPage() {
               const totalExercises = getTotalExercises(w)
               const accent = getAccentColor(index)
               return (
-                <a key={w.id} href={`#/workouts/${w.id}`} className="workout-list-card">
+                <div
+                  key={w.id}
+                  className="workout-list-card"
+                  onClick={() => navigate(`/workouts/${w.id}`)}
+                >
                   <div className="workout-list-accent" style={{ background: accent }} />
                   <div className="workout-list-body">
                     <div className="workout-list-name">{w.name}</div>
@@ -182,12 +188,12 @@ export function WorkoutsPage() {
                           {s.type}
                         </span>
                       ))}
-                      {w.isPublic && <span className="pill pill-success">Public</span>}
+                      {w.visibility === 'public' && <span className="pill pill-success">Public</span>}
                     </div>
                     <div className="workout-list-stats">
                       <span className="workout-list-stat">
                         <Clock size={12} />
-                        {w.estimatedDuration} min
+                        {w.estimatedMinutes != null ? `${w.estimatedMinutes} min` : '—'}
                       </span>
                       <span className="workout-list-stat">
                         <Dumbbell size={12} />
@@ -208,12 +214,15 @@ export function WorkoutsPage() {
                         borderRadius: 8,
                         border: 'none',
                       }}
-                      onClick={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/workouts/${w.id}`)
+                      }}
                     >
                       Start
                     </button>
                   </div>
-                </a>
+                </div>
               )
             })}
           </div>

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { LoginPage } from './pages/auth/LoginPage'
 import { HomePage } from './pages/home/HomePage'
 import { WorkoutsPage } from './pages/workouts/WorkoutsPage'
+import { WorkoutDetailPage } from './pages/workouts/WorkoutDetailPage'
 import { ProgressPage } from './pages/progress/ProgressPage'
 import { ProfilePage } from './pages/profile/ProfilePage'
 import { getToken } from './lib/auth'
@@ -34,6 +35,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/home" element={<RequireAuth><HomePage /></RequireAuth>} />
+        <Route path="/workouts/:id" element={<RequireAuth><WorkoutDetailPage /></RequireAuth>} />
         <Route path="/workouts" element={<RequireAuth><WorkoutsPage /></RequireAuth>} />
         <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />

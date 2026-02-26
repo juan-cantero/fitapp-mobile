@@ -35,31 +35,39 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   })
 }
 
-export interface Workout {
+export interface WorkoutSectionItem {
   id: string
-  name: string
-  description?: string
-  estimatedDuration: number
-  sections: WorkoutSection[]
-  isPublic: boolean
-  createdAt: string
+  exerciseId: string
+  exerciseName: string
+  exerciseNameEn: string | null
+  mediaUrl: string | null
+  orderIndex: number
+  sets: number
+  reps: number | null
+  durationSeconds: number | null
+  weightKg: number | null
+  restSeconds: number
+  notes: string | null
 }
 
 export interface WorkoutSection {
   id: string
   type: 'warmup' | 'main' | 'cooldown'
-  exercises: WorkoutExercise[]
+  orderIndex: number
+  items: WorkoutSectionItem[]
 }
 
-export interface WorkoutExercise {
+export interface Workout {
   id: string
-  exerciseId: string
-  exerciseName: string
-  mediaUrl?: string
-  sets: number
-  reps: number
-  restSeconds: number
-  notes?: string
+  name: string
+  description: string | null
+  tags: string[]
+  visibility: 'private' | 'public'
+  estimatedMinutes: number | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  sections: WorkoutSection[]
 }
 
 export interface WorkoutsResponse {
