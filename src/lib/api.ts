@@ -122,3 +122,47 @@ export function getMyStats(): Promise<UserStats> {
 export function getMySessions(page = 1, limit = 20): Promise<SessionsResponse> {
   return request(`/sessions/mine?page=${page}&limit=${limit}`)
 }
+
+export interface StartSessionResponse {
+  id: string
+  workoutId: string
+  workoutName: string
+  userId: string
+  startedAt: string
+  completedAt: string | null
+  durationSeconds: number | null
+}
+
+export function startSession(workoutId: string): Promise<StartSessionResponse> {
+  return request('/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ workoutId }),
+  })
+}
+
+export interface LogSetResponse {
+  id: string
+  sessionId: string
+  exerciseId: string
+  setNumber: number
+  repsDone: number | null
+  weightKg: number | null
+  loggedAt: string
+}
+
+export function logSet(
+  sessionId: string,
+  payload: { exerciseId: string; setNumber: number; repsDone: number | null; weightKg: number | null }
+): Promise<LogSetResponse> {
+  return request(`/sessions/${sessionId}/sets`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function finishSession(sessionId: string, durationSeconds: number): Promise<StartSessionResponse> {
+  return request(`/sessions/${sessionId}/finish`, {
+    method: 'PUT',
+    body: JSON.stringify({ durationSeconds }),
+  })
+}
