@@ -166,3 +166,57 @@ export function finishSession(sessionId: string, durationSeconds: number): Promi
     body: JSON.stringify({ durationSeconds }),
   })
 }
+
+export interface ExerciseBasic {
+  id: string
+  name: string
+  nameEn: string | null
+  mediaUrl: string | null
+  primaryMuscle: string
+}
+
+export interface ExercisesListResponse {
+  data: ExerciseBasic[]
+  total: number
+  page: number
+  limit: number
+}
+
+export function listExercises(search?: string, page = 1, limit = 50): Promise<ExercisesListResponse> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) })
+  if (search) params.set('search', search)
+  return request(`/exercises?${params}`)
+}
+
+export interface CreateWorkoutSectionItemPayload {
+  exerciseId: string
+  orderIndex: number
+  sets: number
+  reps: number | null
+  durationSeconds: number | null
+  weightKg: number | null
+  restSeconds: number
+  notes: string | null
+}
+
+export interface CreateWorkoutSectionPayload {
+  type: 'warmup' | 'main' | 'cooldown'
+  orderIndex: number
+  items: CreateWorkoutSectionItemPayload[]
+}
+
+export interface CreateWorkoutPayload {
+  name: string
+  description: string | null
+  tags: string[]
+  visibility: 'private' | 'public'
+  estimatedMinutes: number | null
+  sections: CreateWorkoutSectionPayload[]
+}
+
+export function createWorkout(payload: CreateWorkoutPayload): Promise<Workout> {
+  return request('/workouts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
