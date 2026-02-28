@@ -7,6 +7,7 @@ import { WorkoutDetailPage } from './pages/workouts/WorkoutDetailPage'
 import { CreateWorkoutPage } from './pages/workouts/CreateWorkoutPage'
 import { EditWorkoutPage } from './pages/workouts/EditWorkoutPage'
 import { GuidedWorkoutPage } from './pages/workout/GuidedWorkoutPage'
+import { ExercisesPage } from './pages/exercises/ExercisesPage'
 import { ProgressPage } from './pages/progress/ProgressPage'
 import { ProfilePage } from './pages/profile/ProfilePage'
 import { getToken } from './lib/auth'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/workouts/:id/start" element={<RequireAuth><GuidedWorkoutPage /></RequireAuth>} />
         <Route path="/workouts/:id" element={<RequireAuth><WorkoutDetailPage /></RequireAuth>} />
         <Route path="/workouts" element={<RequireAuth><WorkoutsPage /></RequireAuth>} />
+        <Route path="/exercises" element={<RequireAuth><ExercisesPage /></RequireAuth>} />
         <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/home" replace />} />

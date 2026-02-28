@@ -186,10 +186,39 @@ export interface ExercisesListResponse {
   limit: number
 }
 
-export function listExercises(search?: string, page = 1, limit = 50): Promise<ExercisesListResponse> {
+export type MuscleGroup =
+  | 'quads' | 'hamstrings' | 'glutes' | 'adductors' | 'abductors' | 'calves'
+  | 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'forearms' | 'core'
+
+export interface ExerciseDetail {
+  id: string
+  name: string
+  nameEn: string | null
+  difficulty: 'beginner' | 'intermediate' | 'advanced'
+  primaryMuscle: MuscleGroup
+  secondaryMuscles: MuscleGroup[]
+  movementPattern: string
+  equipment: string[]
+  isCompound: boolean
+  bodyPosition: string
+  mediaUrl: string | null
+  instructions: string | null
+}
+
+export function listExercises(
+  search?: string,
+  page = 1,
+  limit = 50,
+  primaryMuscle?: string,
+): Promise<ExercisesListResponse> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) })
   if (search) params.set('search', search)
+  if (primaryMuscle) params.set('primaryMuscle', primaryMuscle)
   return request(`/exercises?${params}`)
+}
+
+export function getExercise(id: string): Promise<ExerciseDetail> {
+  return request(`/exercises/${id}`)
 }
 
 export interface CreateWorkoutSectionItemPayload {
