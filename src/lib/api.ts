@@ -133,6 +133,10 @@ export interface StartSessionResponse {
   durationSeconds: number | null
 }
 
+export function getOpenSession(workoutId: string): Promise<{ session: Session | null }> {
+  return request(`/sessions/mine/open?workoutId=${workoutId}`)
+}
+
 export function startSession(workoutId: string): Promise<StartSessionResponse> {
   return request('/sessions', {
     method: 'POST',

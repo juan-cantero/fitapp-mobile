@@ -6,8 +6,10 @@ import {
   startSession,
   logSet,
   finishSession,
+  getOpenSession,
   type Workout,
   type WorkoutSection,
+  type Session,
 } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -27,7 +29,7 @@ interface FlatExercise {
   notes: string | null
 }
 
-type Phase = 'loading' | 'getready' | 'exercise' | 'rest' | 'done'
+type Phase = 'checking' | 'resume-prompt' | 'loading' | 'getready' | 'exercise' | 'rest' | 'done'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +82,16 @@ function getSectionLabel(type: WorkoutSection['type']): string {
   }
 }
 
+function formatTimeAgo(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime()
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr}h ago`
+  return `${Math.floor(diffHr / 24)}d ago`
+}
+
 // SVG ring circumference for r=80
 const CIRCUMFERENCE = 2 * Math.PI * 80
 
@@ -93,10 +105,11 @@ export function GuidedWorkoutPage() {
 
   const [workout, setWorkout] = useState<Workout | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [openSession, setOpenSession] = useState<Session | null>(null)
   const [flatExercises, setFlatExercises] = useState<FlatExercise[]>([])
   const [exerciseIndex, setExerciseIndex] = useState(0)
   const [currentSet, setCurrentSet] = useState(1)
-  const [phase, setPhase] = useState<Phase>('loading')
+  const [phase, setPhase] = useState<Phase>('checking')
   const [restSecondsLeft, setRestSecondsLeft] = useState(0)
   const [totalRestSeconds, setTotalRestSeconds] = useState(0)
   const [exerciseSecondsLeft, setExerciseSecondsLeft] = useState(0)
@@ -126,23 +139,53 @@ export function GuidedWorkoutPage() {
 
   useEffect(() => {
     if (!id) return
-    Promise.all([getWorkout(id), startSession(id)])
-      .then(([w, session]) => {
+    // Check for an existing open session before starting a new one
+    Promise.all([getWorkout(id), getOpenSession(id)])
+      .then(([w, { session }]) => {
         setWorkout(w)
-        setSessionId(session.id)
         const flat = buildFlatExercises(w)
         setFlatExercises(flat)
         flatExercisesRef.current = flat
-        if (flat.length === 0) {
-          setPhase('done')
+
+        if (session) {
+          setOpenSession(session)
+          setPhase('resume-prompt')
         } else {
-          setPhase('getready')
+          return startSession(id).then((s) => {
+            setSessionId(s.id)
+            sessionIdRef.current = s.id
+            setPhase(flat.length === 0 ? 'done' : 'getready')
+          })
         }
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to start workout')
       })
   }, [id])
+
+  // -------------------------------------------------------------------------
+  // Resume / Start Fresh (from resume-prompt)
+  // -------------------------------------------------------------------------
+
+  const handleResume = () => {
+    if (!openSession) return
+    setSessionId(openSession.id)
+    sessionIdRef.current = openSession.id
+    setPhase(flatExercisesRef.current.length === 0 ? 'done' : 'getready')
+  }
+
+  const handleStartFresh = async () => {
+    if (!id) return
+    setPhase('loading')
+    try {
+      const s = await startSession(id)
+      setSessionId(s.id)
+      sessionIdRef.current = s.id
+      setPhase(flatExercisesRef.current.length === 0 ? 'done' : 'getready')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start workout')
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Finish session
@@ -369,14 +412,67 @@ export function GuidedWorkoutPage() {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Phase: loading                                                       */}
+      {/* Phase: checking / loading                                            */}
       {/* ------------------------------------------------------------------ */}
-      {phase === 'loading' && !error && (
+      {(phase === 'checking' || phase === 'loading') && !error && (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
           flexDirection: 'column', gap: 12, color: 'var(--text-muted)',
         }}>
-          <div style={{ fontSize: 14 }}>Starting workout...</div>
+          <div style={{ fontSize: 14 }}>
+            {phase === 'checking' ? 'Checking session...' : 'Starting workout...'}
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Phase: resume-prompt                                                 */}
+      {/* ------------------------------------------------------------------ */}
+      {phase === 'resume-prompt' && openSession && (
+        <div style={{
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '24px 20px',
+        }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '28px 20px',
+            width: '100%',
+            display: 'flex', flexDirection: 'column', gap: 20,
+          }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>⏸️</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+                Resume previous session?
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                You have an unfinished session for this workout started{' '}
+                {formatTimeAgo(openSession.startedAt)}.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button className="btn btn-primary" onClick={handleResume}>
+                Resume Session
+              </button>
+              <button
+                className="btn btn-outline"
+                onClick={handleStartFresh}
+                style={{ color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+              >
+                Start Fresh
+              </button>
+            </div>
+
+            <button
+              className="btn btn-ghost"
+              onClick={() => navigate(`/workouts/${id}`)}
+              style={{ fontSize: 13, color: 'var(--text-muted)' }}
+            >
+              Go back
+            </button>
+          </div>
         </div>
       )}
 
