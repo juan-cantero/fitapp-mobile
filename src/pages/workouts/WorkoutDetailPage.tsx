@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw, Pencil } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import { getWorkout, type Workout, type WorkoutSection } from '../../lib/api'
+import { getUser } from '../../lib/auth'
 
 function getSectionColor(type: WorkoutSection['type']): string {
   switch (type) {
@@ -77,6 +78,11 @@ export function WorkoutDetailPage() {
     if (id) navigate(`/workouts/${id}/start`)
   }
 
+  const currentUser = getUser()
+  const canEdit = workout != null && (
+    currentUser?.id === workout.createdBy || currentUser?.role === 'admin'
+  )
+
   return (
     <div className="phone-shell">
       {/* Sticky top bar */}
@@ -90,14 +96,27 @@ export function WorkoutDetailPage() {
           Back
         </button>
         {!isLoading && workout && (
-          <button
-            className="header-action-btn"
-            onClick={handleStart}
-            aria-label="Start workout"
-          >
-            <Play size={14} />
-            Start
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {canEdit && (
+              <button
+                className="header-action-btn"
+                onClick={() => navigate(`/workouts/${id}/edit`)}
+                aria-label="Edit workout"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <Pencil size={14} />
+                Edit
+              </button>
+            )}
+            <button
+              className="header-action-btn"
+              onClick={handleStart}
+              aria-label="Start workout"
+            >
+              <Play size={14} />
+              Start
+            </button>
+          </div>
         )}
       </header>
 

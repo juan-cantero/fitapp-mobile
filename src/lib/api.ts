@@ -220,3 +220,10 @@ export function createWorkout(payload: CreateWorkoutPayload): Promise<Workout> {
     body: JSON.stringify(payload),
   })
 }
+
+export function updateWorkout(id: string, payload: CreateWorkoutPayload): Promise<Workout> {
+  return request(`/workouts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}

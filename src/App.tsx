@@ -5,6 +5,7 @@ import { HomePage } from './pages/home/HomePage'
 import { WorkoutsPage } from './pages/workouts/WorkoutsPage'
 import { WorkoutDetailPage } from './pages/workouts/WorkoutDetailPage'
 import { CreateWorkoutPage } from './pages/workouts/CreateWorkoutPage'
+import { EditWorkoutPage } from './pages/workouts/EditWorkoutPage'
 import { GuidedWorkoutPage } from './pages/workout/GuidedWorkoutPage'
 import { ProgressPage } from './pages/progress/ProgressPage'
 import { ProfilePage } from './pages/profile/ProfilePage'
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/home" element={<RequireAuth><HomePage /></RequireAuth>} />
         <Route path="/workouts/new" element={<RequireAuth><CreateWorkoutPage /></RequireAuth>} />
+        <Route path="/workouts/:id/edit" element={<RequireAuth><EditWorkoutPage /></RequireAuth>} />
         <Route path="/workouts/:id/start" element={<RequireAuth><GuidedWorkoutPage /></RequireAuth>} />
         <Route path="/workouts/:id" element={<RequireAuth><WorkoutDetailPage /></RequireAuth>} />
         <Route path="/workouts" element={<RequireAuth><WorkoutsPage /></RequireAuth>} />
