@@ -1,7 +1,13 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Edit2, ChevronRight, Bell, Ruler, LogOut, Shield, HelpCircle } from 'lucide-react'
+import { Edit2, ChevronRight, Bell, Ruler, LogOut, Shield, HelpCircle, Download } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import { getUser, clearAuth } from '../../lib/auth'
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
 
 function getInitials(name: string): string {
   return name
@@ -17,6 +23,23 @@ export function ProfilePage() {
   const user = getUser()
   const name = user?.name ?? 'Athlete'
   const email = user?.email ?? ''
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+
+  useEffect(() => {
+    function handler(e: Event) {
+      e.preventDefault()
+      setInstallPrompt(e as BeforeInstallPromptEvent)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  async function handleInstall() {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') setInstallPrompt(null)
+  }
 
   function handleLogout() {
     clearAuth()
@@ -82,6 +105,28 @@ export function ProfilePage() {
             </div>
           </div>
         </div>
+
+        {/* App */}
+        {installPrompt && (
+          <div className="settings-group">
+            <div className="settings-group-label">App</div>
+            <div
+              className="settings-row"
+              onClick={handleInstall}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInstall() }}
+            >
+              <span className="settings-row-label" style={{ color: 'var(--primary)' }}>
+                <Download size={15} style={{ display: 'inline', marginRight: 10, verticalAlign: 'middle' }} />
+                Install App
+              </span>
+              <div className="settings-row-value">
+                <ChevronRight size={16} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Account */}
         <div className="settings-group">

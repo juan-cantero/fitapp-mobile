@@ -1,6 +1,6 @@
 import { getToken } from './auth'
 
-export const API_BASE = 'http://localhost:8787/api/v1'
+export const API_BASE = import.meta.env.VITE_API_BASE as string
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
@@ -219,6 +219,16 @@ export function listExercises(
 
 export function getExercise(id: string): Promise<ExerciseDetail> {
   return request(`/exercises/${id}`)
+}
+
+export interface SubstituteExercise {
+  exercise: ExerciseBasic & { primaryMuscle: string }
+  score: number
+  source: 'curated' | 'algorithmic'
+}
+
+export function getExerciseSubstitutes(id: string): Promise<{ data: SubstituteExercise[] }> {
+  return request(`/exercises/${id}/substitutes`)
 }
 
 export interface CreateWorkoutSectionItemPayload {

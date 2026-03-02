@@ -7,9 +7,11 @@ import {
   logSet,
   finishSession,
   getOpenSession,
+  getExerciseSubstitutes,
   type Workout,
   type WorkoutSection,
   type Session,
+  type SubstituteExercise,
 } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
@@ -119,6 +121,9 @@ export function GuidedWorkoutPage() {
   const [setsLogged, setSetsLogged] = useState(0)
   const [startedAt] = useState(() => Date.now())
   const [error, setError] = useState<string | null>(null)
+  const [showSubSheet, setShowSubSheet] = useState(false)
+  const [substitutes, setSubstitutes] = useState<SubstituteExercise[]>([])
+  const [subsLoading, setSubsLoading] = useState(false)
 
   // Refs to always have latest values inside callbacks/effects without stale closures
   const exerciseIndexRef = useRef(exerciseIndex)
@@ -200,7 +205,8 @@ export function GuidedWorkoutPage() {
     const durationSeconds = Math.round((Date.now() - startedAt) / 1000)
     try {
       await finishSession(sid, durationSeconds)
-    } catch {
+    } catch (err) {
+      console.error('finishSession failed:', err)
       // Session already finished or network error — still go to done
     }
     setPhase('done')
@@ -360,6 +366,43 @@ export function GuidedWorkoutPage() {
     }
   }
   handleCompleteSetRef.current = handleCompleteSet
+
+  // -------------------------------------------------------------------------
+  // Swap exercise
+  // -------------------------------------------------------------------------
+
+  async function handleOpenSwap() {
+    const currentEx = flatExercisesRef.current[exerciseIndexRef.current]
+    if (!currentEx) return
+    setSubstitutes([])
+    setSubsLoading(true)
+    setShowSubSheet(true)
+    try {
+      const { data } = await getExerciseSubstitutes(currentEx.exerciseId)
+      setSubstitutes(data)
+    } catch {
+      // silently ignore — sheet will show empty state
+    } finally {
+      setSubsLoading(false)
+    }
+  }
+
+  function handleSwapExercise(sub: SubstituteExercise) {
+    setFlatExercises((prev) => {
+      const idx = exerciseIndexRef.current
+      const updated = [...prev]
+      updated[idx] = {
+        ...updated[idx],
+        exerciseId: sub.exercise.id,
+        exerciseName: sub.exercise.name,
+        exerciseNameEn: sub.exercise.nameEn,
+        mediaUrl: sub.exercise.mediaUrl,
+      }
+      flatExercisesRef.current = updated
+      return updated
+    })
+    setShowSubSheet(false)
+  }
 
   // -------------------------------------------------------------------------
   // Exit confirmation
@@ -660,6 +703,7 @@ export function GuidedWorkoutPage() {
             >
               Skip
             </button>
+            <button className="btn btn-ghost" onClick={handleOpenSwap}>Swap</button>
             <button className="btn btn-ghost" onClick={handleExit}>Exit</button>
           </div>
         </>
@@ -783,6 +827,111 @@ export function GuidedWorkoutPage() {
             </button>
           </div>
         </div>
+      )}
+      {/* ------------------------------------------------------------------ */}
+      {/* Substitute swap sheet                                               */}
+      {/* ------------------------------------------------------------------ */}
+      {showSubSheet && (
+        <>
+          <div
+            className="bottom-sheet-overlay open"
+            onClick={() => setShowSubSheet(false)}
+          />
+          <div className="bottom-sheet open" style={{ maxHeight: '70vh' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '16px 20px 12px',
+              borderBottom: '1px solid var(--border)',
+            }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
+                Swap Exercise
+              </div>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '4px 8px', fontSize: 13 }}
+                onClick={() => setShowSubSheet(false)}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, padding: '8px 0 24px' }}>
+              {subsLoading && (
+                <div style={{
+                  padding: '32px 20px', textAlign: 'center',
+                  color: 'var(--text-muted)', fontSize: 14,
+                }}>
+                  Loading substitutes…
+                </div>
+              )}
+
+              {!subsLoading && substitutes.length === 0 && (
+                <div style={{
+                  padding: '32px 20px', textAlign: 'center',
+                  color: 'var(--text-muted)', fontSize: 14,
+                }}>
+                  No substitutes found for this exercise.
+                </div>
+              )}
+
+              {!subsLoading && substitutes.map((sub) => (
+                <button
+                  key={sub.exercise.id}
+                  onClick={() => handleSwapExercise(sub)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    width: '100%', padding: '10px 20px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <div style={{
+                    width: 48, height: 48, borderRadius: 10,
+                    background: 'var(--surface-2)', flexShrink: 0,
+                    overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {sub.exercise.mediaUrl ? (
+                      <img
+                        src={sub.exercise.mediaUrl}
+                        alt={sub.exercise.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 20 }}>💪</span>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 14, fontWeight: 600, color: 'var(--text)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}>
+                      {sub.exercise.name}
+                    </div>
+                    {sub.exercise.nameEn && (
+                      <div style={{
+                        fontSize: 12, color: 'var(--text-muted)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {sub.exercise.nameEn}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 600, padding: '2px 7px',
+                    borderRadius: 6,
+                    background: sub.source === 'curated'
+                      ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                      : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
+                    color: sub.source === 'curated' ? 'var(--primary)' : 'var(--text-muted)',
+                    flexShrink: 0,
+                  }}>
+                    {sub.source === 'curated' ? '★' : `${sub.score}`}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
