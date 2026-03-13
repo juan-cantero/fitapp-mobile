@@ -1,6 +1,35 @@
-import { getToken } from './auth'
+import { getToken, getRefreshToken, updateTokens, clearAuth, saveAuth } from './auth'
 
 export const API_BASE = import.meta.env.VITE_API_BASE as string
+
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefresh(): Promise<boolean> {
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = getRefreshToken()
+      if (!refreshToken) return false
+
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+      if (!res.ok) return false
+
+      const data = await res.json() as { token: string; refreshToken: string }
+      updateTokens(data.token, data.refreshToken)
+      return true
+    } catch {
+      return false
+    } finally {
+      refreshPromise = null
+    }
+  })()
+  return refreshPromise
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
@@ -12,27 +41,45 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...(options.headers ?? {}),
     },
   })
+
   if (res.status === 401) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return request<T>(path, options)   // retry with new token
+    clearAuth()
     window.dispatchEvent(new Event('fitapp:unauthorized'))
     throw new Error('Unauthorized')
   }
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: 'Request failed' }))
-    throw new Error((err as { message?: string }).message ?? 'Request failed')
+    let message = `Something went wrong (${res.status})`
+    try {
+      const body = await res.json() as { message?: string; code?: string }
+      message = body.message ?? body.code ?? message
+    } catch { /* ignore */ }
+    throw new Error(message)
   }
+
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
 export interface LoginResponse {
   token: string
+  refreshToken: string
   user: { id: string; email: string; name: string; role: 'admin' | 'member' }
 }
 
 export function login(email: string, password: string): Promise<LoginResponse> {
-  return request('/auth/login', {
+  return request<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })
+}
+
+export async function loginAndSave(email: string, password: string): Promise<LoginResponse> {
+  const res = await login(email, password)
+  saveAuth(res.token, res.refreshToken, res.user)
+  return res
 }
 
 export interface WorkoutSectionItem {
@@ -64,6 +111,7 @@ export interface Workout {
   tags: string[]
   visibility: 'private' | 'public'
   estimatedMinutes: number | null
+  coverImageUrl: string | null
   createdBy: string
   createdAt: string
   updatedAt: string

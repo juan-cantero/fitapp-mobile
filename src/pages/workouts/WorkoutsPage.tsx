@@ -237,7 +237,20 @@ export function WorkoutsPage() {
                   className="workout-list-card"
                   onClick={() => navigate(`/workouts/${w.id}`)}
                 >
-                  <div className="workout-list-accent" style={{ background: accent }} />
+                  {w.coverImageUrl ? (
+                    <div style={{
+                      width: 56, height: 56, borderRadius: 10, flexShrink: 0,
+                      overflow: 'hidden', border: '1px solid var(--border)',
+                    }}>
+                      <img
+                        src={w.coverImageUrl}
+                        alt={w.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block' }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="workout-list-accent" style={{ background: accent }} />
+                  )}
                   <div className="workout-list-body">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                       <div className="workout-list-name" style={{ margin: 0 }}>{w.name}</div>

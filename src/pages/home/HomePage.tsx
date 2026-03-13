@@ -157,7 +157,15 @@ export function HomePage() {
         {workouts.map((w, i) => (
           <div className="workout-hero" key={w.id}>
             <div className="workout-hero-thumb">
-              <span className="workout-hero-thumb-icon">🏋️</span>
+              {w.coverImageUrl ? (
+                <img
+                  src={w.coverImageUrl}
+                  alt={w.name}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center' }}
+                />
+              ) : (
+                <span className="workout-hero-thumb-icon">🏋️</span>
+              )}
             </div>
             <div className="workout-hero-body">
               <div className="workout-hero-name">{w.name}</div>

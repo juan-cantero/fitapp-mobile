@@ -21,7 +21,7 @@ export function LoginPage() {
     setIsLoading(true)
     try {
       const res = await login(email, password)
-      saveAuth(res.token, res.user)
+      saveAuth(res.token, res.refreshToken, res.user)
       navigate('/home', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed. Please try again.')

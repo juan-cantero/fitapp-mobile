@@ -154,6 +154,22 @@ export function WorkoutDetailPage() {
 
         {!isLoading && !error && workout && (
           <>
+            {/* Cover image */}
+            {workout.coverImageUrl && (
+              <div style={{
+                width: '100%', height: 200,
+                borderRadius: 'var(--radius-lg)',
+                overflow: 'hidden',
+                marginBottom: 16,
+              }}>
+                <img
+                  src={workout.coverImageUrl}
+                  alt={workout.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block' }}
+                />
+              </div>
+            )}
+
             {/* Workout title and meta */}
             <div style={{ marginBottom: 20 }}>
               <h1 style={{
