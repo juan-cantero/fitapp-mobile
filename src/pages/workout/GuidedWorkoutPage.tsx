@@ -125,6 +125,35 @@ export function GuidedWorkoutPage() {
   const [substitutes, setSubstitutes] = useState<SubstituteExercise[]>([])
   const [subsLoading, setSubsLoading] = useState(false)
 
+  // -------------------------------------------------------------------------
+  // Wake lock — keep screen on during workout
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!('wakeLock' in navigator)) return
+    let lock: WakeLockSentinel | null = null
+
+    async function acquire() {
+      try {
+        lock = await navigator.wakeLock.request('screen')
+      } catch {
+        // Not critical — ignore if denied
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') acquire()
+    }
+
+    acquire()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      lock?.release()
+    }
+  }, [])
+
   // Refs to always have latest values inside callbacks/effects without stale closures
   const exerciseIndexRef = useRef(exerciseIndex)
   const currentSetRef = useRef(currentSet)
