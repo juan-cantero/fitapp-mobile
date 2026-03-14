@@ -1,11 +1,46 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
-import { getMyStats, getMySessions } from '../../lib/api'
-import type { UserStats, Session } from '../../lib/api'
+import { getMyStats, getMySessions, getMyInsights } from '../../lib/api'
+import type { UserStats, Session, SessionInsights } from '../../lib/api'
 
 const SESSION_COLORS = ['#FF6B35', '#FFB830', '#30D158', '#5AC8FA', '#BF5AF2']
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+const MUSCLE_LABELS: Record<string, string> = {
+  chest: 'Chest',
+  back: 'Back',
+  shoulders: 'Shoulders',
+  biceps: 'Biceps',
+  triceps: 'Triceps',
+  forearms: 'Forearms',
+  quads: 'Quads',
+  hamstrings: 'Hamstrings',
+  glutes: 'Glutes',
+  calves: 'Calves',
+  core: 'Core',
+  adductors: 'Adductors',
+  abductors: 'Abductors',
+  traps: 'Traps',
+}
+
+const MUSCLE_COLORS: Record<string, string> = {
+  chest: '#FF6B35',
+  back: '#5AC8FA',
+  shoulders: '#FFB830',
+  biceps: '#30D158',
+  triceps: '#BF5AF2',
+  quads: '#FF6B35',
+  hamstrings: '#5AC8FA',
+  glutes: '#FFB830',
+  core: '#30D158',
+  calves: '#BF5AF2',
+  forearms: '#FF9500',
+  traps: '#FF2D55',
+  adductors: '#64D2FF',
+  abductors: '#FFD60A',
+}
 
 function formatVolume(kg: number): string {
   if (kg >= 1000) return `${(kg / 1000).toFixed(1)}k`
@@ -29,12 +64,10 @@ function formatSessionDate(iso: string): string {
   return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-// Returns Mon=0 .. Sun=6 for a Date
 function weekDayIndex(d: Date): number {
   return (d.getDay() + 6) % 7
 }
 
-// Get the Monday of the current week
 function getWeekStart(): Date {
   const now = new Date()
   const day = weekDayIndex(now)
@@ -63,15 +96,18 @@ function buildWeekData(sessions: Session[]): { label: string; status: 'done' | '
 }
 
 export function ProgressPage() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState<UserStats | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
+  const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getMyStats(), getMySessions(1, 30)])
-      .then(([s, sess]) => {
+    Promise.all([getMyStats(), getMySessions(1, 30), getMyInsights(30)])
+      .then(([s, sess, ins]) => {
         setStats(s)
         setSessions(sess.data)
+        setInsights(ins)
       })
       .catch(console.error)
       .finally(() => setIsLoading(false))
@@ -79,8 +115,9 @@ export function ProgressPage() {
 
   const weekData = buildWeekData(sessions)
   const daysTrainedThisWeek = weekData.filter(d => d.status === 'done').length
-  const maxCount = Math.max(...weekData.map(d => d.count), 1)
   const recentSessions = sessions.slice(0, 10)
+
+  const maxMuscleSets = Math.max(...(insights?.topMuscles.map(m => m.sets) ?? [1]), 1)
 
   return (
     <div className="phone-shell">
@@ -132,33 +169,93 @@ export function ProgressPage() {
           </div>
         </div>
 
-        {/* Sessions per day chart */}
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div className="section-header" style={{ marginBottom: 16 }}>
-            <span className="section-title">This Week</span>
-            <span className="pill pill-primary">Sessions / day</span>
-          </div>
+        {/* Top muscles — last 30 days */}
+        {!isLoading && insights && insights.topMuscles.length > 0 && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="section-header" style={{ marginBottom: 16 }}>
+              <span className="section-title">Muscles Trained</span>
+              <span className="pill pill-primary">Last 30 days</span>
+            </div>
 
-          <div className="bar-chart">
-            {weekData.map((b, i) => {
-              const isToday = b.status === 'today'
-              const height = b.count > 0 ? Math.max((b.count / maxCount) * 100, 10) : 0
-              return (
-                <div className="bar-wrap" key={i}>
-                  {height > 0 ? (
-                    <div
-                      className={`bar${isToday ? ' today-bar' : ''}`}
-                      style={{ height: `${height}%` }}
-                    />
-                  ) : (
-                    <div style={{ flex: 1 }} />
-                  )}
-                  <span className="bar-label">{b.label[0]}</span>
-                </div>
-              )
-            })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {insights.topMuscles.map((m) => {
+                const pct = Math.round((m.sets / maxMuscleSets) * 100)
+                const color = MUSCLE_COLORS[m.muscle] ?? 'var(--primary)'
+                return (
+                  <div key={m.muscle}>
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      marginBottom: 5, fontSize: 13,
+                    }}>
+                      <span style={{ color: 'var(--text)', fontWeight: 600 }}>
+                        {MUSCLE_LABELS[m.muscle] ?? m.muscle}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)' }}>{m.sets} sets</span>
+                    </div>
+                    <div style={{
+                      height: 6, borderRadius: 3,
+                      background: 'var(--surface-2)', overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', width: `${pct}%`,
+                        borderRadius: 3, background: color,
+                        transition: 'width 0.4s ease',
+                      }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Top exercises — last 30 days */}
+        {!isLoading && insights && insights.topExercises.length > 0 && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="section-header" style={{ marginBottom: 14 }}>
+              <span className="section-title">Top Exercises</span>
+              <span className="pill pill-primary">Last 30 days</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {insights.topExercises.map((ex, i) => (
+                <div key={ex.exerciseId} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '9px 0',
+                  borderBottom: i < insights.topExercises.length - 1 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: `color-mix(in srgb, var(--primary) 15%, transparent)`,
+                    color: 'var(--primary)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, fontWeight: 700, flexShrink: 0,
+                  }}>
+                    {i + 1}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 600, color: 'var(--text)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {ex.name}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                      {ex.totalReps > 0 ? `${ex.totalReps} reps total` : `${ex.totalSets} sets`}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize: 13, fontWeight: 700, color: 'var(--text)',
+                    background: 'var(--surface-2)', borderRadius: 8,
+                    padding: '3px 9px', flexShrink: 0,
+                  }}>
+                    {ex.totalSets} sets
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Recent sessions */}
         <div className="section-header">
@@ -182,7 +279,12 @@ export function ProgressPage() {
         )}
 
         {recentSessions.map((s, i) => (
-          <div key={s.id} className="session-row">
+          <button
+            key={s.id}
+            className="session-row"
+            onClick={() => navigate(`/sessions/${s.id}`)}
+            style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer' }}
+          >
             <div className="session-dot" style={{ background: SESSION_COLORS[i % SESSION_COLORS.length] }} />
             <div className="session-info">
               <div className="session-name">{s.workoutName}</div>
@@ -195,7 +297,7 @@ export function ProgressPage() {
               <div className="session-stats-val">{s.completedAt ? 'Done' : 'In progress'}</div>
             </div>
             <ChevronRight size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-          </div>
+          </button>
         ))}
       </div>
 

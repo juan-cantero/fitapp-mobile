@@ -137,6 +137,17 @@ export function getWorkout(id: string): Promise<Workout> {
   return request(`/workouts/${id}`)
 }
 
+export interface SessionSet {
+  id: string
+  sessionId: string
+  exerciseId: string
+  exerciseName: string
+  setNumber: number
+  repsDone: number | null
+  weightKg: number | null
+  loggedAt: string
+}
+
 export interface Session {
   id: string
   workoutId: string
@@ -145,6 +156,7 @@ export interface Session {
   startedAt: string
   completedAt: string | null
   durationSeconds: number | null
+  sets?: SessionSet[]
 }
 
 export interface SessionsResponse {
@@ -167,8 +179,33 @@ export function getMyStats(): Promise<UserStats> {
   return request('/sessions/mine/stats')
 }
 
+export function getSession(id: string): Promise<Session> {
+  return request(`/sessions/${id}`)
+}
+
 export function getMySessions(page = 1, limit = 20): Promise<SessionsResponse> {
   return request(`/sessions/mine?page=${page}&limit=${limit}`)
+}
+
+export interface MuscleInsight {
+  muscle: string
+  sets: number
+}
+
+export interface ExerciseInsight {
+  exerciseId: string
+  name: string
+  totalSets: number
+  totalReps: number
+}
+
+export interface SessionInsights {
+  topMuscles: MuscleInsight[]
+  topExercises: ExerciseInsight[]
+}
+
+export function getMyInsights(days = 30): Promise<SessionInsights> {
+  return request(`/sessions/mine/insights?days=${days}`)
 }
 
 export interface StartSessionResponse {
