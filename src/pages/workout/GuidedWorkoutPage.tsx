@@ -302,17 +302,41 @@ export function GuidedWorkoutPage() {
   // Get Ready countdown (3-2-1 before each exercise)
   // -------------------------------------------------------------------------
 
+  function playBeep(frequency: number, duration: number) {
+    try {
+      const ctx = new AudioContext()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = frequency
+      osc.type = 'sine'
+      gain.gain.setValueAtTime(0.3, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + duration)
+      osc.onended = () => ctx.close()
+    } catch {
+      // Audio not supported — silently skip
+    }
+  }
+
   useEffect(() => {
     if (phase !== 'getready') return
     setGetReadyCount(3)
+    playBeep(660, 0.12) // beep on 3
 
     const interval = setInterval(() => {
       setGetReadyCount((n) => {
         if (n <= 1) {
           clearInterval(interval)
-          setTimeout(() => setPhase('exercise'), 0)
+          setTimeout(() => {
+            playBeep(880, 0.25) // higher beep when starting
+            setPhase('exercise')
+          }, 0)
           return 0
         }
+        playBeep(660, 0.12) // beep on 2 and 1
         return n - 1
       })
     }, 1000)
