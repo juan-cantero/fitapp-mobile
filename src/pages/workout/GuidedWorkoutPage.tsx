@@ -287,8 +287,10 @@ export function GuidedWorkoutPage() {
       setRestSecondsLeft((s) => {
         if (s <= 1) {
           clearInterval(interval)
-          // Defer so state update completes before triggering advance
-          setTimeout(() => advanceAfterRestRef.current(), 0)
+          setTimeout(() => {
+            playBeep(880, 0.25)
+            advanceAfterRestRef.current()
+          }, 0)
           return 0
         }
         return s - 1
