@@ -306,6 +306,18 @@ export function WorkoutDetailPage() {
                                 {item.sets}x {formatRepsOrDuration(item.reps, item.durationSeconds)}
                               </span>
 
+                              {/* Weight */}
+                              {item.weightKg != null && (
+                                <span style={{
+                                  display: 'inline-flex', alignItems: 'center',
+                                  padding: '2px 8px', borderRadius: 6,
+                                  background: 'var(--surface-2)',
+                                  fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+                                }}>
+                                  {item.weightKg} kg
+                                </span>
+                              )}
+
                               {/* Rest */}
                               <span style={{
                                 display: 'inline-flex', alignItems: 'center', gap: 3,

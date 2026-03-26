@@ -197,6 +197,7 @@ export interface ExerciseInsight {
   name: string
   totalSets: number
   totalReps: number
+  maxWeightKg: number | null
 }
 
 export interface SessionInsights {

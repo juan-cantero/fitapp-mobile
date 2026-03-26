@@ -241,7 +241,8 @@ export function ProgressPage() {
                       {ex.name}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
-                      {ex.totalReps > 0 ? `${ex.totalReps} reps total` : `${ex.totalSets} sets`}
+                      {ex.totalReps > 0 ? `${ex.totalReps} reps` : `${ex.totalSets} sets`}
+                      {ex.maxWeightKg != null ? ` · max ${ex.maxWeightKg} kg` : ''}
                     </div>
                   </div>
                   <div style={{
