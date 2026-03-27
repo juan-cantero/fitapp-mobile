@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw, Pencil } from 'lucide-react'
+import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw, Pencil, X } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
-import { getWorkout, type Workout, type WorkoutSection } from '../../lib/api'
+import { getWorkout, type Workout, type WorkoutSection, type WorkoutSectionItem } from '../../lib/api'
 import { getUser } from '../../lib/auth'
 
 function getSectionColor(type: WorkoutSection['type']): string {
@@ -56,6 +56,130 @@ function DetailSkeleton() {
   )
 }
 
+function ExerciseModal({
+  item,
+  sectionColor,
+  onClose,
+}: {
+  item: WorkoutSectionItem
+  sectionColor: string
+  onClose: () => void
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 500,
+        background: 'rgba(0,0,0,0.75)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 430,
+          background: 'var(--surface)',
+          borderRadius: '20px 20px 0 0',
+          overflow: 'hidden',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+      >
+        {/* GIF / image */}
+        {item.mediaUrl ? (
+          <div style={{
+            width: '100%', height: 240,
+            background: 'var(--surface-2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden',
+          }}>
+            <img
+              src={item.mediaUrl}
+              alt={item.exerciseName}
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          </div>
+        ) : (
+          <div style={{
+            width: '100%', height: 160,
+            background: 'var(--surface-2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Dumbbell size={48} color="var(--text-muted)" />
+          </div>
+        )}
+
+        {/* Info */}
+        <div style={{ padding: '16px 20px 28px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>
+                {item.exerciseName}
+              </div>
+              {item.exerciseNameEn && (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {item.exerciseNameEn}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'var(--surface-2)', border: 'none', borderRadius: '50%',
+                width: 32, height: 32, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginLeft: 12,
+              }}
+            >
+              <X size={16} color="var(--text-muted)" />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center',
+              padding: '5px 12px', borderRadius: 8,
+              background: `color-mix(in srgb, ${sectionColor} 15%, transparent)`,
+              color: sectionColor, fontSize: 13, fontWeight: 700,
+            }}>
+              {item.sets}× {formatRepsOrDuration(item.reps, item.durationSeconds)}
+            </span>
+
+            {item.weightKg != null && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center',
+                padding: '5px 12px', borderRadius: 8,
+                background: 'var(--surface-2)',
+                fontSize: 13, fontWeight: 600, color: 'var(--text)',
+              }}>
+                {item.weightKg} kg
+              </span>
+            )}
+
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 12px', borderRadius: 8,
+              background: 'var(--surface-2)',
+              fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
+            }}>
+              <RotateCcw size={12} />
+              {item.restSeconds}s rest
+            </span>
+          </div>
+
+          {item.notes && (
+            <div style={{
+              marginTop: 12, fontSize: 13, color: 'var(--text-muted)',
+              fontStyle: 'italic', lineHeight: 1.5,
+            }}>
+              {item.notes}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function WorkoutDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -63,6 +187,7 @@ export function WorkoutDetailPage() {
   const [workout, setWorkout] = useState<Workout | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [selectedItem, setSelectedItem] = useState<{ item: WorkoutSectionItem; color: string } | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -252,11 +377,13 @@ export function WorkoutDetailPage() {
                       {sortedItems.map((item) => (
                         <div
                           key={item.id}
+                          onClick={() => setSelectedItem({ item, color: sectionColor })}
                           style={{
                             display: 'flex', alignItems: 'flex-start', gap: 12,
                             padding: '12px 14px',
                             background: 'var(--surface)', borderRadius: 'var(--radius-md)',
                             border: '1px solid var(--border)',
+                            cursor: 'pointer',
                           }}
                         >
                           {/* Thumbnail */}
@@ -368,6 +495,14 @@ export function WorkoutDetailPage() {
       )}
 
       <BottomNav />
+
+      {selectedItem && (
+        <ExerciseModal
+          item={selectedItem.item}
+          sectionColor={selectedItem.color}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
     </div>
   )
 }
