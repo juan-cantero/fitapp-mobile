@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Search, Dumbbell, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import {
   getWorkout,
   updateWorkout,
-  listExercises,
   type ExerciseBasic,
   type CreateWorkoutPayload,
 } from '../../lib/api'
+import { useInfiniteExercises } from '../../hooks/useInfiniteExercises'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -132,14 +132,21 @@ export function EditWorkoutPage() {
 
   // Picker state
   const [pickerSection, setPickerSection] = useState<SectionType | null>(null)
+  const [pickerSearchInput, setPickerSearchInput] = useState('')
   const [pickerSearch, setPickerSearch] = useState('')
-  const [pickerResults, setPickerResults] = useState<ExerciseBasic[]>([])
-  const [isSearching, setIsSearching] = useState(false)
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pickerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const pickerScrollRef = useRef<HTMLDivElement>(null)
+
+  const {
+    exercises: pickerResults,
+    isLoading: isSearching,
+    isFetchingMore: isPickerFetchingMore,
+    sentinelRef: pickerSentinelRef,
+  } = useInfiniteExercises(pickerSearch, null, pickerScrollRef)
 
   // Load workout data into form
   useEffect(() => {
@@ -180,33 +187,11 @@ export function EditWorkoutPage() {
       .finally(() => setIsLoadingWorkout(false))
   }, [id])
 
-  // Load initial exercise list for picker
-  useEffect(() => {
-    listExercises(undefined, 1, 50)
-      .then((res) => setPickerResults(res.data))
-      .catch(() => {})
-  }, [])
-
-  // Debounced search
-  const runSearch = useCallback((q: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    setIsSearching(true)
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await listExercises(q.trim() || undefined, 1, 50)
-        setPickerResults(res.data)
-      } catch {
-        // ignore
-      } finally {
-        setIsSearching(false)
-      }
-    }, 300)
-  }, [])
-
-  useEffect(() => {
-    runSearch(pickerSearch)
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [pickerSearch, runSearch])
+  function handlePickerSearchChange(value: string) {
+    setPickerSearchInput(value)
+    if (pickerDebounceRef.current) clearTimeout(pickerDebounceRef.current)
+    pickerDebounceRef.current = setTimeout(() => setPickerSearch(value), 300)
+  }
 
   useEffect(() => {
     if (pickerSection) {
@@ -222,6 +207,7 @@ export function EditWorkoutPage() {
   }
 
   function openPicker(section: SectionType) {
+    setPickerSearchInput('')
     setPickerSearch('')
     setExpandedExerciseId(null)
     setPickerSection(section)
@@ -596,13 +582,13 @@ export function EditWorkoutPage() {
               type="search"
               className="search-input"
               placeholder="Search exercises…"
-              value={pickerSearch}
-              onChange={(e) => setPickerSearch(e.target.value)}
+              value={pickerSearchInput}
+              onChange={(e) => handlePickerSearchChange(e.target.value)}
             />
           </div>
         </div>
 
-        <div className="bottom-sheet-content">
+        <div ref={pickerScrollRef} className="bottom-sheet-content">
           {isSearching && (
             <div style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
               Searching…
@@ -670,6 +656,14 @@ export function EditWorkoutPage() {
               </div>
             )
           })}
+
+          {/* Infinite scroll sentinel */}
+          <div ref={pickerSentinelRef} style={{ height: 1 }} />
+          {isPickerFetchingMore && (
+            <div style={{ textAlign: 'center', padding: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              Loading more...
+            </div>
+          )}
         </div>
       </div>
 

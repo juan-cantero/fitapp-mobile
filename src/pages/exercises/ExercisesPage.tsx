@@ -1,13 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef } from 'react'
 import { Search, Dumbbell, X, AlertCircle } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import {
-  listExercises,
   getExercise,
-  type ExerciseBasic,
   type ExerciseDetail,
   type MuscleGroup,
 } from '../../lib/api'
+import { useInfiniteExercises } from '../../hooks/useInfiniteExercises'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -233,11 +232,14 @@ function ExerciseDetailContent({ detail }: { detail: ExerciseDetail }) {
 // ---------------------------------------------------------------------------
 
 export function ExercisesPage() {
-  const [exercises, setExercises] = useState<ExerciseBasic[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // Separate input state (immediate) from search state (debounced)
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const { exercises, isLoading, isFetchingMore, error, sentinelRef, retry } =
+    useInfiniteExercises(search, muscleFilter)
 
   // Detail sheet state
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -245,39 +247,14 @@ export function ExercisesPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
-  const searchRef = useRef(search)
-  const muscleRef = useRef(muscleFilter)
-  useEffect(() => { searchRef.current = search }, [search])
-  useEffect(() => { muscleRef.current = muscleFilter }, [muscleFilter])
-
-  const fetchExercises = useCallback((q: string, muscle: MuscleGroup | null) => {
-    setIsLoading(true)
-    setError(null)
-    listExercises(q || undefined, 1, 50, muscle ?? undefined)
-      .then((res) => setExercises(res.data))
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load exercises'))
-      .finally(() => setIsLoading(false))
-  }, [])
-
-  // Initial load
-  useEffect(() => {
-    fetchExercises('', null)
-  }, [fetchExercises])
-
-  // Debounced search
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   function handleSearchChange(value: string) {
-    setSearch(value)
+    setSearchInput(value)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => {
-      fetchExercises(value, muscleRef.current)
-    }, 300)
+    debounceRef.current = setTimeout(() => setSearch(value), 300)
   }
 
   function handleMuscleFilter(muscle: MuscleGroup | null) {
     setMuscleFilter(muscle)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    fetchExercises(searchRef.current, muscle)
   }
 
   // Open detail sheet
@@ -311,7 +288,7 @@ export function ExercisesPage() {
             type="search"
             className="search-input"
             placeholder="Search exercises…"
-            value={search}
+            value={searchInput}
             onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
@@ -350,7 +327,7 @@ export function ExercisesPage() {
             <button
               className="btn btn-outline"
               style={{ width: 'auto' }}
-              onClick={() => fetchExercises(search, muscleFilter)}
+              onClick={() => retry()}
             >
               Try again
             </button>
@@ -435,6 +412,14 @@ export function ExercisesPage() {
                 </div>
               )
             })}
+
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} style={{ height: 1 }} />
+            {isFetchingMore && (
+              <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                Loading more...
+              </div>
+            )}
           </div>
         )}
       </div>
