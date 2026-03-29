@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
@@ -102,7 +102,8 @@ export function ProgressPage() {
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
+  const fetchAll = useCallback(() => {
+    setIsLoading(true)
     Promise.all([getMyStats(), getMySessions(1, 30), getMyInsights(30)])
       .then(([s, sess, ins]) => {
         setStats(s)
@@ -112,6 +113,16 @@ export function ProgressPage() {
       .catch(console.error)
       .finally(() => setIsLoading(false))
   }, [])
+
+  // Fetch on mount
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Re-fetch when the app comes back from background (PWA / mobile)
+  useEffect(() => {
+    const handleVisible = () => { if (document.visibilityState === 'visible') fetchAll() }
+    document.addEventListener('visibilitychange', handleVisible)
+    return () => document.removeEventListener('visibilitychange', handleVisible)
+  }, [fetchAll])
 
   const weekData = buildWeekData(sessions)
   const daysTrainedThisWeek = weekData.filter(d => d.status === 'done').length
