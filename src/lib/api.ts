@@ -95,6 +95,9 @@ export interface WorkoutSectionItem {
   weightKg: number | null
   restSeconds: number
   notes: string | null
+  circuitGroup: number | null
+  circuitRounds: number | null
+  circuitRestSeconds: number | null
 }
 
 export interface WorkoutSection {
@@ -326,6 +329,9 @@ export interface CreateWorkoutSectionItemPayload {
   weightKg: number | null
   restSeconds: number
   notes: string | null
+  circuitGroup: number | null
+  circuitRounds: number | null
+  circuitRestSeconds: number | null
 }
 
 export interface CreateWorkoutSectionPayload {
@@ -354,5 +360,132 @@ export function updateWorkout(id: string, payload: CreateWorkoutPayload): Promis
   return request(`/workouts/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  })
+}
+
+// ── Circuit Preset API ─────────────────────────────────────────────────────────
+
+export interface CircuitPresetItem {
+  id: string
+  exerciseId: string
+  exerciseName: string
+  mediaUrl: string | null
+  orderIndex: number
+  sets: number
+  reps: number | null
+  durationSeconds: number | null
+  weightKg: number | null
+  restSeconds: number
+  notes: string | null
+}
+
+export interface CircuitPreset {
+  id: string
+  name: string
+  rounds: number | null
+  circuitRestSeconds: number | null
+  createdAt: string
+  items: CircuitPresetItem[]
+}
+
+export async function listCircuitPresets(): Promise<CircuitPreset[]> {
+  const res = await request<{ data: CircuitPreset[] }>('/circuit-presets')
+  return res.data
+}
+
+export async function createCircuitPreset(payload: {
+  name: string
+  rounds: number | null
+  circuitRestSeconds: number | null
+  items: Omit<CircuitPresetItem, 'id'>[]
+}): Promise<CircuitPreset> {
+  return request<CircuitPreset>('/circuit-presets', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteCircuitPreset(id: string): Promise<void> {
+  return request<void>(`/circuit-presets/${id}`, { method: 'DELETE' })
+}
+
+// ── AI Workout Suggestion ──────────────────────────────────────────────────────
+
+export async function suggestWorkout(prompt: string): Promise<CreateWorkoutPayload> {
+  return request<CreateWorkoutPayload>('/ai/suggest-workout', {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  })
+}
+
+// ── Week muscle coverage ───────────────────────────────────────────────────────
+
+export interface WeekMuscleCoverage {
+  weekStart: string
+  weekEnd: string
+  totalSessions: number
+  muscles: { muscle: string; sets: number; sessionsCount: number }[]
+}
+
+export function getWeekMuscleCoverage(week?: string): Promise<WeekMuscleCoverage> {
+  const params = week ? `?week=${week}` : ''
+  return request(`/sessions/mine/week-muscles${params}`)
+}
+
+export interface SessionMuscleBreakdown {
+  sessionId: string
+  workoutName: string
+  startedAt: string
+  muscles: { muscle: string; sets: number }[]
+}
+
+export function getSessionMuscles(sessionId: string): Promise<SessionMuscleBreakdown> {
+  return request(`/sessions/${sessionId}/muscles`)
+}
+
+// ── Weekly Plan ───────────────────────────────────────────────────────────────
+
+export type PlanGoalType = 'muscle_priority' | 'split' | 'balanced' | 'objective'
+export type SplitValue = 'full_body' | 'push_pull_legs' | 'upper_lower' | 'ppl'
+export type ObjectiveValue = 'strength' | 'hypertrophy' | 'fat_loss' | 'endurance'
+
+export interface PlanMuscle {
+  muscle: string
+  sets: number
+}
+
+export interface PlanSlot {
+  slotIndex: number
+  workoutId: string
+  workoutName: string
+  estimatedMinutes: number | null
+  tags: string[]
+  muscles: PlanMuscle[]
+}
+
+export interface WeeklyPlan {
+  id: string
+  userId: string
+  goalType: PlanGoalType
+  goalValue: string
+  createdAt: string
+  updatedAt: string
+  slots: PlanSlot[]
+}
+
+export type GeneratePlanBody =
+  | { goalType: 'muscle_priority'; goalValue: string }
+  | { goalType: 'split'; goalValue: SplitValue }
+  | { goalType: 'balanced'; goalValue?: string }
+  | { goalType: 'objective'; goalValue: ObjectiveValue }
+
+export function getWeeklyPlan(): Promise<{ plan: WeeklyPlan | null }> {
+  return request('/weekly-plan')
+}
+
+export function generateWeeklyPlan(body: GeneratePlanBody): Promise<WeeklyPlan> {
+  return request('/weekly-plan/generate', {
+    method: 'POST',
+    body: JSON.stringify(body),
   })
 }
