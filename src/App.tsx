@@ -5,12 +5,14 @@ import { HomePage } from './pages/home/HomePage'
 import { WorkoutsPage } from './pages/workouts/WorkoutsPage'
 import { WorkoutDetailPage } from './pages/workouts/WorkoutDetailPage'
 import { CreateWorkoutPage } from './pages/workouts/CreateWorkoutPage'
+import { WorkoutGeneratorPage } from './pages/workouts/WorkoutGeneratorPage'
 import { EditWorkoutPage } from './pages/workouts/EditWorkoutPage'
 import { GuidedWorkoutPage } from './pages/workout/GuidedWorkoutPage'
 import { ExercisesPage } from './pages/exercises/ExercisesPage'
 import { ProgressPage } from './pages/progress/ProgressPage'
 import { SessionDetailPage } from './pages/progress/SessionDetailPage'
 import { ProfilePage } from './pages/profile/ProfilePage'
+import { ChallengesPage } from './pages/challenges/ChallengesPage'
 import { getToken } from './lib/auth'
 
 function UnauthorizedListener() {
@@ -40,6 +42,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/home" element={<RequireAuth><HomePage /></RequireAuth>} />
+        <Route path="/workouts/generate" element={<RequireAuth><WorkoutGeneratorPage /></RequireAuth>} />
         <Route path="/workouts/new" element={<RequireAuth><CreateWorkoutPage /></RequireAuth>} />
         <Route path="/workouts/:id/edit" element={<RequireAuth><EditWorkoutPage /></RequireAuth>} />
         <Route path="/workouts/:id/start" element={<RequireAuth><GuidedWorkoutPage /></RequireAuth>} />
@@ -49,6 +52,7 @@ export default function App() {
         <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
         <Route path="/sessions/:id" element={<RequireAuth><SessionDetailPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/challenges" element={<RequireAuth><ChallengesPage /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </BrowserRouter>

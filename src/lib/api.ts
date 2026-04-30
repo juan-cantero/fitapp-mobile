@@ -489,3 +489,52 @@ export function generateWeeklyPlan(body: GeneratePlanBody): Promise<WeeklyPlan> 
     body: JSON.stringify(body),
   })
 }
+
+// ── Challenges ────────────────────────────────────────────────────────────────
+
+import type {
+  Challenge,
+  UserChallenge,
+  LogChallengeProgressBody,
+  CreateChallengeInput,
+} from '../types/challenge'
+
+export function listChallenges(): Promise<{ data: Challenge[] }> {
+  return request('/challenges')
+}
+
+export function listMyChallenges(): Promise<{ data: Challenge[] }> {
+  return request('/challenges/mine')
+}
+
+export function startChallenge(challengeId: string): Promise<UserChallenge> {
+  return request('/challenges/my-runs', {
+    method: 'POST',
+    body: JSON.stringify({ challengeId }),
+  })
+}
+
+export function getMyRuns(): Promise<{ data: UserChallenge[] }> {
+  return request('/challenges/my-runs')
+}
+
+export function logChallengeProgress(
+  runId: string,
+  body: LogChallengeProgressBody,
+): Promise<void> {
+  return request(`/challenges/my-runs/${runId}/log`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function createChallenge(body: CreateChallengeInput): Promise<Challenge> {
+  return request('/challenges', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteChallenge(id: string): Promise<void> {
+  return request(`/challenges/${id}`, { method: 'DELETE' })
+}
