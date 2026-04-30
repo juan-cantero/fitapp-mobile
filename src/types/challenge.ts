@@ -22,26 +22,26 @@ export interface Challenge {
 }
 
 export interface ChallengeItemProgress {
-  itemId: string
+  challengeItemId: string
   exerciseId: string
   exerciseName: string
-  metric: 'reps' | 'time_seconds'
-  target: number
-  logged: number
-  isComplete: boolean
+  targetReps: number | null
+  targetSeconds: number | null
+  totalLogged: number
+  dailyProgress: { date: string; value: number }[]
+  orderIndex: number
 }
 
 export interface UserChallenge {
   id: string
+  userId: string
   challengeId: string
-  challengeTitle: string
-  challengeDescription: string
-  challengeType: ChallengeType
-  durationDays: number
+  challenge: Challenge
   startedAt: string
   endsAt: string
   status: UserChallengeStatus
-  items: ChallengeItemProgress[]
+  completedAt: string | null
+  itemProgress: ChallengeItemProgress[]
 }
 
 export interface LogChallengeProgressBody {

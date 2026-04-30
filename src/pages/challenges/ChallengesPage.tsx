@@ -65,8 +65,10 @@ function TypeBadge({ type }: { type: ChallengeType }) {
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
 function ItemProgressBar({ item }: { item: ChallengeItemProgress }) {
-  const pct = item.target > 0 ? Math.min(100, Math.round((item.logged / item.target) * 100)) : 0
-  const unit = item.metric === 'time_seconds' ? 'seg' : 'reps'
+  const target = item.targetReps ?? item.targetSeconds ?? 0
+  const unit = item.targetReps != null ? 'reps' : 'seg'
+  const pct = target > 0 ? Math.min(100, Math.round((item.totalLogged / target) * 100)) : 0
+  const isComplete = target > 0 && item.totalLogged >= target
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
@@ -74,13 +76,13 @@ function ItemProgressBar({ item }: { item: ChallengeItemProgress }) {
           {item.exerciseName}
         </span>
         <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
-          {item.logged} / {item.target} {unit}
+          {item.totalLogged} / {target} {unit}
         </span>
       </div>
       <div style={{ height: 5, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
         <div style={{
           height: '100%', width: `${pct}%`, borderRadius: 3,
-          background: item.isComplete ? 'var(--success)' : 'var(--primary)',
+          background: isComplete ? 'var(--success)' : 'var(--primary)',
           transition: 'width 0.4s ease',
         }} />
       </div>
@@ -93,7 +95,7 @@ function ItemProgressBar({ item }: { item: ChallengeItemProgress }) {
 interface LogModalProps {
   run: UserChallenge
   onClose: () => void
-  onSubmit: (runId: string, items: { itemId: string; metric: 'reps' | 'time_seconds'; value: number }[]) => Promise<void>
+  onSubmit: (runId: string, items: { challengeItemId: string; isReps: boolean; value: number }[]) => Promise<void>
 }
 
 function LogModal({ run, onClose, onSubmit }: LogModalProps) {
@@ -106,11 +108,11 @@ function LogModal({ run, onClose, onSubmit }: LogModalProps) {
   }
 
   async function handleSubmit() {
-    const entries = run.items
+    const entries = run.itemProgress
       .map(item => ({
-        itemId: item.itemId,
-        metric: item.metric,
-        value: parseInt(values[item.itemId] ?? '0', 10),
+        challengeItemId: item.challengeItemId,
+        isReps: item.targetReps != null,
+        value: parseInt(values[item.challengeItemId] ?? '0', 10),
       }))
       .filter(e => e.value > 0)
 
@@ -147,7 +149,7 @@ function LogModal({ run, onClose, onSubmit }: LogModalProps) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>Registrar progreso</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{run.challengeTitle}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{run.challenge.title}</div>
           </div>
           <button
             onClick={onClose}
@@ -159,10 +161,11 @@ function LogModal({ run, onClose, onSubmit }: LogModalProps) {
         </div>
 
         {/* Items */}
-        {run.items.map(item => {
-          const unit = item.metric === 'time_seconds' ? 'seg' : 'reps'
+        {run.itemProgress.map(item => {
+          const unit = item.targetReps != null ? 'reps' : 'seg'
+          const target = item.targetReps ?? item.targetSeconds ?? 0
           return (
-            <div key={item.itemId} style={{ marginBottom: 18 }}>
+            <div key={item.challengeItemId} style={{ marginBottom: 18 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>
                 {item.exerciseName}
               </label>
@@ -171,15 +174,15 @@ function LogModal({ run, onClose, onSubmit }: LogModalProps) {
                   type="number"
                   min={0}
                   placeholder="0"
-                  value={values[item.itemId] ?? ''}
-                  onChange={e => setValue(item.itemId, e.target.value)}
+                  value={values[item.challengeItemId] ?? ''}
+                  onChange={e => setValue(item.challengeItemId, e.target.value)}
                   className="form-input"
                   style={{ flex: 1, height: 44, fontSize: 15 }}
                 />
                 <span style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>{unit}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                ({item.logged} / {item.target} registrados)
+                ({item.totalLogged} / {target} registrados)
               </div>
             </div>
           )
@@ -217,9 +220,9 @@ function ActiveCard({ run, onLog }: ActiveCardProps) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {run.challengeTitle}
+            {run.challenge.title}
           </div>
-          <TypeBadge type={run.challengeType} />
+          <TypeBadge type={run.challenge.type} />
         </div>
         <div style={{
           fontSize: 12, fontWeight: 700, flexShrink: 0, marginTop: 2,
@@ -229,8 +232,8 @@ function ActiveCard({ run, onLog }: ActiveCardProps) {
         </div>
       </div>
 
-      {run.items.map(item => (
-        <ItemProgressBar key={item.itemId} item={item} />
+      {run.itemProgress.map(item => (
+        <ItemProgressBar key={item.challengeItemId} item={item} />
       ))}
 
       <button
@@ -349,9 +352,9 @@ function HistoryCard({ run }: { run: UserChallenge }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {run.challengeTitle}
+            {run.challenge.title}
           </div>
-          <TypeBadge type={run.challengeType} />
+          <TypeBadge type={run.challenge.type} />
         </div>
         <span className={isCompleted ? 'pill pill-success' : 'pill pill-danger'} style={{ fontSize: 10, flexShrink: 0 }}>
           {isCompleted ? 'Completado' : 'Fallido'}
@@ -362,8 +365,8 @@ function HistoryCard({ run }: { run: UserChallenge }) {
         {formatDate(run.startedAt)} — {formatDate(run.endsAt)}
       </div>
 
-      {run.items.map(item => (
-        <ItemProgressBar key={item.itemId} item={item} />
+      {run.itemProgress.map(item => (
+        <ItemProgressBar key={item.challengeItemId} item={item} />
       ))}
     </div>
   )
@@ -749,19 +752,18 @@ export function ChallengesPage() {
 
   async function handleLog(
     runId: string,
-    items: { itemId: string; metric: 'reps' | 'time_seconds'; value: number }[],
+    items: { challengeItemId: string; isReps: boolean; value: number }[],
   ) {
     const date = today()
     await Promise.all(
       items.map(item =>
         logChallengeProgress(runId, {
-          challengeItemId: item.itemId,
-          ...(item.metric === 'reps' ? { reps: item.value } : { seconds: item.value }),
+          challengeItemId: item.challengeItemId,
+          ...(item.isReps ? { reps: item.value } : { seconds: item.value }),
           date,
         })
       )
     )
-    // Refresh active runs after logging
     fetchRuns()
   }
 
