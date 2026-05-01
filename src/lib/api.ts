@@ -538,3 +538,42 @@ export function createChallenge(body: CreateChallengeInput): Promise<Challenge> 
 export function deleteChallenge(id: string): Promise<void> {
   return request(`/challenges/${id}`, { method: 'DELETE' })
 }
+
+// ── Collections ──────────────────────────────────────────────────────────────
+
+import type { WorkoutCollection, CreateCollectionBody, UpdateCollectionBody } from '../types/collection'
+
+export function listCollections(): Promise<{ data: WorkoutCollection[] }> {
+  return request('/collections')
+}
+
+export function createCollection(body: CreateCollectionBody): Promise<WorkoutCollection> {
+  return request('/collections', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateCollection(id: string, body: UpdateCollectionBody): Promise<WorkoutCollection> {
+  return request(`/collections/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteCollection(id: string): Promise<void> {
+  return request(`/collections/${id}`, { method: 'DELETE' })
+}
+
+export function addWorkoutToCollection(collectionId: string, workoutId: string): Promise<void> {
+  return request(`/collections/${collectionId}/workouts`, {
+    method: 'POST',
+    body: JSON.stringify({ workoutId }),
+  })
+}
+
+export function removeWorkoutFromCollection(collectionId: string, workoutId: string): Promise<void> {
+  return request(`/collections/${collectionId}/workouts/${workoutId}`, { method: 'DELETE' })
+}
+
+export function getCollectionsForWorkout(workoutId: string): Promise<{ collectionIds: string[] }> {
+  return request(`/collections/for-workout/${workoutId}`)
+}
+
+export function getCollectionWorkoutIds(collectionId: string): Promise<{ workoutIds: string[] }> {
+  return request(`/collections/${collectionId}/workouts`)
+}
