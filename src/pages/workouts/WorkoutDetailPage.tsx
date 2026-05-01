@@ -5,6 +5,9 @@ import { BottomNav } from '../../components/BottomNav'
 import { getWorkout, type Workout, type WorkoutSection, type WorkoutSectionItem } from '../../lib/api'
 import { getUser } from '../../lib/auth'
 
+const CIRCUIT_COLORS = ['#FF6B35', '#5AC8FA', '#BF5AF2', '#FFB830', '#30D158']
+const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E']
+
 function getSectionColor(type: WorkoutSection['type']): string {
   switch (type) {
     case 'warmup':
@@ -374,14 +377,59 @@ export function WorkoutDetailPage() {
 
                     {/* Exercise rows */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {sortedItems.map((item) => (
+                      {sortedItems.map((item, idx) => {
+                        const prevItem = sortedItems[idx - 1]
+                        const isInCircuit = item.circuitGroup != null
+                        const isFirstInCircuit = isInCircuit && prevItem?.circuitGroup !== item.circuitGroup
+                        const circuitColor = isInCircuit
+                          ? CIRCUIT_COLORS[(item.circuitGroup! - 1) % CIRCUIT_COLORS.length]
+                          : null
+                        const circuitLetter = isInCircuit
+                          ? CIRCUIT_LETTERS[(item.circuitGroup! - 1) % CIRCUIT_LETTERS.length]
+                          : null
+
+                        return (
                         <div
                           key={item.id}
+                          style={isInCircuit ? { borderLeft: `3px solid ${circuitColor}`, gap: 0 } : undefined}
+                        >
+                          {isFirstInCircuit && (() => {
+                            const cRounds = item.circuitRounds ?? 1
+                            const cRestSeconds = item.circuitRestSeconds
+                            return (
+                              <div style={{
+                                padding: '4px 12px',
+                                fontSize: 11, fontWeight: 700, color: circuitColor!,
+                                background: `color-mix(in srgb, ${circuitColor} 8%, transparent)`,
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                borderRadius: '2px 2px 0 0',
+                              }}>
+                                <span style={{
+                                  width: 13, height: 13, borderRadius: '50%',
+                                  background: circuitColor!, color: '#fff',
+                                  fontSize: 8, fontWeight: 800,
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                }}>{circuitLetter}</span>
+                                Circuit {circuitLetter}
+                                {cRounds > 1 && (
+                                  <span style={{ fontSize: 11, color: circuitColor!, fontWeight: 600, marginLeft: 6 }}>
+                                    {cRounds}× rounds
+                                  </span>
+                                )}
+                                {cRestSeconds != null && cRestSeconds > 0 && (
+                                  <span style={{ fontSize: 11, color: circuitColor!, fontWeight: 600, opacity: 0.8 }}>
+                                    · {cRestSeconds}s rest between rounds
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })()}
+                        <div
                           onClick={() => setSelectedItem({ item, color: sectionColor })}
                           style={{
                             display: 'flex', alignItems: 'flex-start', gap: 12,
                             padding: '12px 14px',
-                            background: 'var(--surface)', borderRadius: 'var(--radius-md)',
+                            background: 'var(--surface)', borderRadius: isFirstInCircuit ? '0 var(--radius-md) var(--radius-md) var(--radius-md)' : 'var(--radius-md)',
                             border: '1px solid var(--border)',
                             cursor: 'pointer',
                           }}
@@ -465,7 +513,9 @@ export function WorkoutDetailPage() {
                             )}
                           </div>
                         </div>
-                      ))}
+                        </div>
+                        )
+                      })}
                     </div>
                   </div>
                 )

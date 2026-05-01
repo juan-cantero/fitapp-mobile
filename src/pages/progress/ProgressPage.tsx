@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronLeft, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
+import { BodyMapFront, BodyMapBack } from '../../components/BodyMap'
 import {
   getMyStats, getMySessions, getMyInsights,
   getWeekMuscleCoverage, getSessionMuscles, getWeeklyPlan, generateWeeklyPlan,
@@ -122,6 +123,180 @@ function MusclePills({ muscles, compact = false }: { muscles: { muscle: string; 
   )
 }
 
+// ── Chart colors ──────────────────────────────────────────────────────────────
+
+const CHART_COLORS = ['#FF6B35', '#FFB830', '#30D158', '#5AC8FA', '#BF5AF2']
+
+// ── Helper: minutes per weekday ────────────────────────────────────────────────
+
+function getDayMinutes(sessions: Session[], weekOffset: number): number[] {
+  const start = new Date(getMonday(weekOffset) + 'T00:00:00')
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  const minutes = [0, 0, 0, 0, 0, 0, 0]
+  for (const s of sessions) {
+    const d = new Date(s.startedAt)
+    if (d >= start && d < end) {
+      const idx = (d.getDay() + 6) % 7
+      minutes[idx] += Math.round((s.durationSeconds ?? 0) / 60)
+    }
+  }
+  return minutes
+}
+
+
+// ── Week insight card ─────────────────────────────────────────────────────────
+
+function WeekInsightCard({ muscles }: { muscles: { muscle: string; sets: number }[] }) {
+  if (muscles.length === 0) return null
+  const sorted = [...muscles].sort((a, b) => b.sets - a.sets)
+  const top = sorted[0]
+  const maxSets = top.sets
+  const gaps = (MUSCLES_ALL as readonly string[]).filter(m => {
+    const found = muscles.find(x => x.muscle === m)
+    return !found || found.sets < maxSets * 0.2
+  })
+  const topLabel = MUSCLE_LABELS[top.muscle] ?? top.muscle
+  const gapLabels = gaps.slice(0, 2).map(m => MUSCLE_LABELS[m] ?? m)
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 22, lineHeight: 1 }}>🔥</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>
+            Great work on {topLabel} this week!
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{maxSets} sets — keep it up.</div>
+        </div>
+      </div>
+      {gapLabels.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 22, lineHeight: 1 }}>💡</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>Room to grow</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Consider adding more {gapLabels.join(' and ')} next week.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Helper: total minutes per week (last 4 weeks) ─────────────────────────────
+
+function getWeeklyMinutes(sessions: Session[]): { minutes: number[]; labels: string[] } {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const currentMonday = new Date(now)
+  currentMonday.setDate(now.getDate() + diff)
+  currentMonday.setHours(0, 0, 0, 0)
+
+  const minutes = [0, 0, 0, 0]
+  const labels: string[] = []
+  for (let w = 3; w >= 0; w--) {
+    const weekStart = new Date(currentMonday)
+    weekStart.setDate(currentMonday.getDate() - w * 7)
+    labels.push(weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+  }
+  for (const s of sessions) {
+    const d = new Date(s.startedAt)
+    const msSince = currentMonday.getTime() - d.getTime()
+    const wIdx = Math.floor(msSince / (7 * 24 * 60 * 60 * 1000))
+    if (wIdx >= 0 && wIdx <= 3) minutes[3 - wIdx] += Math.round((s.durationSeconds ?? 0) / 60)
+  }
+  return { minutes, labels }
+}
+
+// ── Daily minutes bar chart (dumb presenter) ───────────────────────────────────
+
+function DayBarsChart({ data, labels, highlightIdx }: { data: number[]; labels: string[]; highlightIdx: number }) {
+  const max = Math.max(...data, 1)
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 72 }}>
+        {data.map((v, i) => (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <div style={{
+                width: '100%',
+                height: v > 0 ? `${Math.max(0.08, v / max) * 100}%` : '3px',
+                borderRadius: '4px 4px 2px 2px',
+                background: v > 0
+                  ? (i === highlightIdx ? 'var(--primary)' : 'color-mix(in srgb, var(--primary) 50%, #2a2a2a)')
+                  : 'var(--surface-2)',
+                transition: 'height 0.4s ease',
+              }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        {data.map((v, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: i === highlightIdx ? 'var(--primary)' : 'var(--text-muted)', fontWeight: i === highlightIdx ? 700 : 400, minHeight: 12 }}>
+            {v > 0 ? `${v}m` : ''}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+        {labels.map((l, i) => (
+          <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 10, fontWeight: i === highlightIdx ? 700 : 400, color: i === highlightIdx ? 'var(--primary)' : 'var(--text-muted)' }}>
+            {l}
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// ── Workout type donut chart ───────────────────────────────────────────────────
+
+function WorkoutTypeDonut({ muscles }: { muscles: { muscle: string; sets: number }[] }) {
+  const top5 = [...muscles].sort((a, b) => b.sets - a.sets).slice(0, 5)
+  if (top5.length === 0) return null
+  const total = top5.reduce((s, m) => s + m.sets, 0)
+  const r = 46, cx = 64, cy = 64, sw = 20
+  const C = 2 * Math.PI * r
+  let cum = 0
+  const segments = top5.map((m, i) => {
+    const frac = m.sets / total
+    const dashArray = `${frac * C} ${C}`
+    const dashOffset = C * 0.25 - cum * C
+    cum += frac
+    return { ...m, frac, dashArray, dashOffset, color: CHART_COLORS[i] }
+  })
+  return (
+    <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+      <svg width="128" height="128" viewBox="0 0 128 128" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={sw} />
+        {segments.map((seg, i) => (
+          <circle
+            key={i} cx={cx} cy={cy} r={r}
+            fill="none" stroke={seg.color} strokeWidth={sw}
+            strokeDasharray={seg.dashArray}
+            strokeDashoffset={seg.dashOffset}
+          />
+        ))}
+        <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--text)" fontSize="18" fontWeight="700" fontFamily="inherit">{total}</text>
+        <text x={cx} y={cy + 12} textAnchor="middle" fill="var(--text-muted)" fontSize="9" fontFamily="inherit">total sets</text>
+      </svg>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+        {segments.map((seg, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{MUSCLE_LABELS[seg.muscle] ?? seg.muscle}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Math.round(seg.frac * 100)}% · {seg.sets} sets</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 type Tab = 'stats' | 'plan'
@@ -134,12 +309,18 @@ export function ProgressPage() {
   const [stats, setStats] = useState<UserStats | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
+  const [weekInsights, setWeekInsights] = useState<SessionInsights | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   // Week coverage state
   const [weekOffset, setWeekOffset] = useState(0)
   const [weekData, setWeekData] = useState<WeekMuscleCoverage | null>(null)
   const [weekLoading, setWeekLoading] = useState(false)
+  const [mapSide, setMapSide] = useState<'front' | 'back'>('front')
+  const [muscleFilter, setMuscleFilter] = useState<'week' | 'month'>('week')
+  const [minutesFilter, setMinutesFilter] = useState<'week' | 'month'>('week')
+  const [donutFilter, setDonutFilter] = useState<'week' | 'month'>('week')
+  const [exerciseFilter, setExerciseFilter] = useState<'week' | 'month'>('week')
 
   // Per-session muscle state
   const [expandedSession, setExpandedSession] = useState<string | null>(null)
@@ -162,11 +343,12 @@ export function ProgressPage() {
 
   const fetchStats = useCallback(() => {
     setIsLoading(true)
-    Promise.allSettled([getMyStats(), getMySessions(1, 20), getMyInsights(30)])
-      .then(([s, sess, ins]) => {
+    Promise.allSettled([getMyStats(), getMySessions(1, 20), getMyInsights(30), getMyInsights(7)])
+      .then(([s, sess, ins, wIns]) => {
         if (s.status === 'fulfilled') setStats(s.value)
         if (sess.status === 'fulfilled') setSessions(sess.value.data)
         if (ins.status === 'fulfilled') setInsights(ins.value)
+        if (wIns.status === 'fulfilled') setWeekInsights(wIns.value)
       })
       .finally(() => setIsLoading(false))
   }, [])
@@ -242,7 +424,10 @@ export function ProgressPage() {
     return Object.entries(map).map(([muscle, sets]) => ({ muscle, sets }))
   }
 
-  const maxMuscleSets = Math.max(...(insights?.topMuscles.map(m => m.sets) ?? [1]), 1)
+  const muscleDisplayData = muscleFilter === 'week'
+    ? [...(weekData?.muscles ?? [])].sort((a, b) => b.sets - a.sets)
+    : (insights?.topMuscles ?? [])
+  const maxMuscleSets = Math.max(...muscleDisplayData.map(m => m.sets), 1)
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -283,6 +468,13 @@ export function ProgressPage() {
         {/* ── STATS TAB ─────────────────────────────────────────────────── */}
         {activeTab === 'stats' && (
           <>
+            {/* Loading bar */}
+            {(isLoading || weekLoading) && (
+              <div style={{ height: 3, borderRadius: 2, background: 'var(--surface-2)', overflow: 'hidden', marginBottom: 12 }}>
+                <div className="loading-bar-anim" style={{ height: '100%', background: 'var(--primary)', width: '30%', borderRadius: 2 }} />
+              </div>
+            )}
+
             {/* Top stats */}
             <div className="stats-row-3">
               <div className="mini-stat-card">
@@ -328,24 +520,132 @@ export function ProgressPage() {
                 </button>
               </div>
 
+              {/* Front / Back toggle */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {(['front', 'back'] as const).map(side => (
+                  <button
+                    key={side}
+                    onClick={() => setMapSide(side)}
+                    style={{
+                      flex: 1, padding: '5px 0',
+                      borderRadius: 8, border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700,
+                      background: mapSide === side ? 'var(--primary)' : 'var(--surface-2)',
+                      color: mapSide === side ? '#fff' : 'var(--text-muted)',
+                      transition: 'background 0.15s, color 0.15s',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {side}
+                  </button>
+                ))}
+              </div>
+
               {weekLoading ? (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading...</div>
-              ) : weekData && weekData.muscles.length > 0 ? (
-                <MusclePills muscles={weekData.muscles} />
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>Loading...</div>
               ) : (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No sessions this week.</div>
+                <div style={{ maxWidth: 240, margin: '0 auto' }}>
+                  {mapSide === 'front'
+                    ? <BodyMapFront muscles={weekData?.muscles ?? []} />
+                    : <BodyMapBack muscles={weekData?.muscles ?? []} />
+                  }
+                </div>
+              )}
+
+              {!weekLoading && weekData && weekData.muscles.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
+                  No sessions this week.
+                </div>
               )}
             </div>
 
-            {/* Top muscles — last 30 days */}
-            {!isLoading && insights && insights.topMuscles.length > 0 && (
+            {/* Week insight */}
+            {!weekLoading && weekData && <WeekInsightCard muscles={weekData.muscles} />}
+
+            {/* Minutes trained */}
+            {(() => {
+              const todayIdx = weekOffset === 0 ? (new Date().getDay() + 6) % 7 : -1
+              const { minutes: wkMins, labels: wkLabels } = getWeeklyMinutes(sessions)
+              const dayMins = getDayMinutes(sessions, weekOffset)
+              const barData = minutesFilter === 'week' ? dayMins : wkMins
+              const barLabels = minutesFilter === 'week' ? ['M', 'T', 'W', 'T', 'F', 'S', 'S'] : wkLabels
+              const total = barData.reduce((s, v) => s + v, 0)
+              return (
+                <div className="card" style={{ marginBottom: 16 }}>
+                  <div className="section-header" style={{ marginBottom: 12 }}>
+                    <span className="section-title">Minutes Trained</span>
+                    {total > 0 && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{total} min total</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                    {(['week', 'month'] as const).map(f => (
+                      <button key={f} onClick={() => setMinutesFilter(f)} style={{
+                        flex: 1, padding: '5px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        fontSize: 12, fontWeight: 700,
+                        background: minutesFilter === f ? 'var(--primary)' : 'var(--surface-2)',
+                        color: minutesFilter === f ? '#fff' : 'var(--text-muted)',
+                        transition: 'background 0.15s, color 0.15s',
+                      }}>
+                        {f === 'week' ? 'This Week' : 'Last 30 days'}
+                      </button>
+                    ))}
+                  </div>
+                  <DayBarsChart
+                    data={barData}
+                    labels={barLabels}
+                    highlightIdx={minutesFilter === 'week' ? todayIdx : 3}
+                  />
+                </div>
+              )
+            })()}
+
+            {/* Muscle distribution donut */}
+            {!isLoading && (weekData || insights) && (
               <div className="card" style={{ marginBottom: 16 }}>
-                <div className="section-header" style={{ marginBottom: 16 }}>
+                <div className="section-header" style={{ marginBottom: 12 }}>
+                  <span className="section-title">Muscle Distribution</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                  {(['week', 'month'] as const).map(f => (
+                    <button key={f} onClick={() => setDonutFilter(f)} style={{
+                      flex: 1, padding: '5px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700,
+                      background: donutFilter === f ? 'var(--primary)' : 'var(--surface-2)',
+                      color: donutFilter === f ? '#fff' : 'var(--text-muted)',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}>
+                      {f === 'week' ? 'This Week' : 'Last 30 days'}
+                    </button>
+                  ))}
+                </div>
+                <WorkoutTypeDonut muscles={donutFilter === 'week' ? (weekData?.muscles ?? []) : (insights?.topMuscles ?? [])} />
+              </div>
+            )}
+
+            {/* Top muscles — filterable */}
+            {muscleDisplayData.length > 0 && (
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="section-header" style={{ marginBottom: 12 }}>
                   <span className="section-title">Muscles Trained</span>
-                  <span className="pill pill-primary">Last 30 days</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                  {(['week', 'month'] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setMuscleFilter(f)}
+                      style={{
+                        flex: 1, padding: '5px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        fontSize: 12, fontWeight: 700,
+                        background: muscleFilter === f ? 'var(--primary)' : 'var(--surface-2)',
+                        color: muscleFilter === f ? '#fff' : 'var(--text-muted)',
+                        transition: 'background 0.15s, color 0.15s',
+                      }}
+                    >
+                      {f === 'week' ? 'This Week' : 'Last 30 days'}
+                    </button>
+                  ))}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {insights.topMuscles.map((m) => {
+                  {muscleDisplayData.map((m) => {
                     const pct = Math.round((m.sets / maxMuscleSets) * 100)
                     const color = MUSCLE_COLORS[m.muscle] ?? 'var(--primary)'
                     return (
@@ -365,37 +665,61 @@ export function ProgressPage() {
             )}
 
             {/* Top exercises */}
-            {!isLoading && insights && insights.topExercises.length > 0 && (
+            {!isLoading && insights && (
               <div className="card" style={{ marginBottom: 16 }}>
-                <div className="section-header" style={{ marginBottom: 14 }}>
+                <div className="section-header" style={{ marginBottom: 12 }}>
                   <span className="section-title">Top Exercises</span>
-                  <span className="pill pill-primary">Last 30 days</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  {insights.topExercises.map((ex, i) => (
-                    <div key={ex.exerciseId} style={{
-                      display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0',
-                      borderBottom: i < insights.topExercises.length - 1 ? '1px solid var(--border)' : 'none',
+                <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                  {(['week', 'month'] as const).map(f => (
+                    <button key={f} onClick={() => setExerciseFilter(f)} style={{
+                      flex: 1, padding: '5px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700,
+                      background: exerciseFilter === f ? 'var(--primary)' : 'var(--surface-2)',
+                      color: exerciseFilter === f ? '#fff' : 'var(--text-muted)',
+                      transition: 'background 0.15s, color 0.15s',
                     }}>
-                      <div style={{
-                        width: 24, height: 24, borderRadius: '50%',
-                        background: 'color-mix(in srgb, var(--primary) 15%, transparent)',
-                        color: 'var(--primary)', display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0,
-                      }}>{i + 1}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
-                          {ex.totalReps > 0 ? `${ex.totalReps} reps` : `${ex.totalSets} sets`}
-                          {ex.maxWeightKg != null ? ` · max ${ex.maxWeightKg} kg` : ''}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', background: 'var(--surface-2)', borderRadius: 8, padding: '3px 9px', flexShrink: 0 }}>
-                        {ex.totalSets} sets
-                      </div>
-                    </div>
+                      {f === 'week' ? 'This Week' : 'Last 30 days'}
+                    </button>
                   ))}
                 </div>
+                {(() => {
+                  const exList = exerciseFilter === 'week'
+                    ? (weekInsights?.topExercises ?? [])
+                    : (insights.topExercises ?? [])
+                  if (exList.length === 0) return (
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
+                      No sessions this week.
+                    </div>
+                  )
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                      {exList.map((ex, i) => (
+                        <div key={ex.exerciseId} style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0',
+                          borderBottom: i < exList.length - 1 ? '1px solid var(--border)' : 'none',
+                        }}>
+                          <div style={{
+                            width: 24, height: 24, borderRadius: '50%',
+                            background: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+                            color: 'var(--primary)', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0,
+                          }}>{i + 1}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>
+                              {ex.totalReps > 0 ? `${ex.totalReps} reps` : `${ex.totalSets} sets`}
+                              {ex.maxWeightKg != null ? ` · max ${ex.maxWeightKg} kg` : ''}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', background: 'var(--surface-2)', borderRadius: 8, padding: '3px 9px', flexShrink: 0 }}>
+                            {ex.totalSets} sets
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 

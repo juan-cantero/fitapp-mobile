@@ -15,6 +15,12 @@ import {
 } from '../../lib/api'
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const CIRCUIT_COLORS = ['#FF6B35', '#5AC8FA', '#BF5AF2', '#FFB830', '#30D158']
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -29,6 +35,11 @@ interface FlatExercise {
   durationSeconds: number | null
   restSeconds: number
   notes: string | null
+  circuitGroup: number | null
+  circuitLetter: string | null
+  circuitRound: number | null
+  circuitTotalRounds: number | null
+  circuitRestSeconds: number | null
 }
 
 type Phase = 'checking' | 'resume-prompt' | 'loading' | 'getready' | 'exercise' | 'rest' | 'done'
@@ -37,25 +48,77 @@ type Phase = 'checking' | 'resume-prompt' | 'loading' | 'getready' | 'exercise' 
 // Helpers
 // ---------------------------------------------------------------------------
 
+const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E']
+
 function buildFlatExercises(workout: Workout): FlatExercise[] {
   const sortedSections = workout.sections.slice().sort((a, b) => a.orderIndex - b.orderIndex)
   const flat: FlatExercise[] = []
 
   for (const section of sortedSections) {
     const sortedItems = section.items.slice().sort((a, b) => a.orderIndex - b.orderIndex)
+
+    // Group circuit items by circuitGroup (preserving first-seen order)
+    const circuitMap = new Map<number, typeof sortedItems>()
     for (const item of sortedItems) {
-      flat.push({
-        sectionType: section.type,
-        exerciseId: item.exerciseId,
-        exerciseName: item.exerciseName,
-        exerciseNameEn: item.exerciseNameEn,
-        mediaUrl: item.mediaUrl,
-        sets: item.sets,
-        reps: item.reps,
-        durationSeconds: item.durationSeconds,
-        restSeconds: item.restSeconds,
-        notes: item.notes,
-      })
+      if (item.circuitGroup != null) {
+        if (!circuitMap.has(item.circuitGroup)) circuitMap.set(item.circuitGroup, [])
+        circuitMap.get(item.circuitGroup)!.push(item)
+      }
+    }
+
+    const processedCircuits = new Set<number>()
+
+    for (const item of sortedItems) {
+      if (item.circuitGroup != null) {
+        if (processedCircuits.has(item.circuitGroup)) continue
+        processedCircuits.add(item.circuitGroup)
+
+        const cItems = circuitMap.get(item.circuitGroup)!
+        const totalRounds = cItems[0]?.circuitRounds ?? 1
+        const cLetter = CIRCUIT_LETTERS[(item.circuitGroup - 1) % CIRCUIT_LETTERS.length]
+
+        const circuitRestSeconds = cItems[0]?.circuitRestSeconds ?? null
+
+        for (let round = 1; round <= totalRounds; round++) {
+          for (const cItem of cItems) {
+            flat.push({
+              sectionType: section.type,
+              exerciseId: cItem.exerciseId,
+              exerciseName: cItem.exerciseName,
+              exerciseNameEn: cItem.exerciseNameEn,
+              mediaUrl: cItem.mediaUrl,
+              sets: cItem.sets,
+              reps: cItem.reps,
+              durationSeconds: cItem.durationSeconds,
+              restSeconds: cItem.restSeconds,
+              notes: cItem.notes,
+              circuitGroup: cItem.circuitGroup,
+              circuitLetter: cLetter,
+              circuitRound: round,
+              circuitTotalRounds: totalRounds,
+              circuitRestSeconds,
+            })
+          }
+        }
+      } else {
+        flat.push({
+          sectionType: section.type,
+          exerciseId: item.exerciseId,
+          exerciseName: item.exerciseName,
+          exerciseNameEn: item.exerciseNameEn,
+          mediaUrl: item.mediaUrl,
+          sets: item.sets,
+          reps: item.reps,
+          durationSeconds: item.durationSeconds,
+          restSeconds: item.restSeconds,
+          notes: item.notes,
+          circuitGroup: null,
+          circuitLetter: null,
+          circuitRound: null,
+          circuitTotalRounds: null,
+          circuitRestSeconds: null,
+        })
+      }
     }
   }
 
@@ -412,7 +475,14 @@ export function GuidedWorkoutPage() {
     const hasMoreExercises = idx < flat.length - 1
 
     if (hasMoreSets || hasMoreExercises) {
-      const rest = ex.restSeconds
+      const nextEx = flat[idx + 1]
+      const isRoundBoundary = !hasMoreSets &&
+        ex.circuitGroup != null &&
+        nextEx?.circuitGroup === ex.circuitGroup &&
+        nextEx?.circuitRound !== ex.circuitRound
+      const rest = isRoundBoundary && ex.circuitRestSeconds != null
+        ? ex.circuitRestSeconds
+        : ex.restSeconds
       setRestSecondsLeft(rest)
       setTotalRestSeconds(rest)
       setPhase('rest')
@@ -624,6 +694,27 @@ export function GuidedWorkoutPage() {
               {flatExercises[exerciseIndex].exerciseNameEn}
             </div>
           )}
+          {flatExercises[exerciseIndex].circuitGroup != null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px',
+              background: `color-mix(in srgb, ${CIRCUIT_COLORS[(flatExercises[exerciseIndex].circuitGroup! - 1) % CIRCUIT_COLORS.length]} 12%, transparent)`,
+              borderRadius: 16,
+            }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: '50%',
+                background: CIRCUIT_COLORS[(flatExercises[exerciseIndex].circuitGroup! - 1) % CIRCUIT_COLORS.length],
+                color: '#fff', fontSize: 9, fontWeight: 800,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              }}>{flatExercises[exerciseIndex].circuitLetter}</span>
+              <span style={{
+                fontSize: 11, fontWeight: 700,
+                color: CIRCUIT_COLORS[(flatExercises[exerciseIndex].circuitGroup! - 1) % CIRCUIT_COLORS.length],
+              }}>
+                Circuit {flatExercises[exerciseIndex].circuitLetter} · Round {flatExercises[exerciseIndex].circuitRound}/{flatExercises[exerciseIndex].circuitTotalRounds}
+              </span>
+            </div>
+          )}
           <button
             className="btn btn-ghost"
             style={{ marginTop: 8 }}
@@ -640,6 +731,32 @@ export function GuidedWorkoutPage() {
       {phase === 'exercise' && ex && (
         <>
           <div className="guided-content">
+            {/* Circuit banner */}
+            {ex.circuitGroup != null && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '6px 16px',
+                background: `color-mix(in srgb, ${CIRCUIT_COLORS[(ex.circuitGroup - 1) % CIRCUIT_COLORS.length]} 12%, transparent)`,
+                borderRadius: 20,
+                alignSelf: 'center',
+              }}>
+                <span style={{
+                  width: 18, height: 18, borderRadius: '50%',
+                  background: CIRCUIT_COLORS[(ex.circuitGroup - 1) % CIRCUIT_COLORS.length],
+                  color: '#fff', fontSize: 10, fontWeight: 800,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>{ex.circuitLetter}</span>
+                <span style={{
+                  fontSize: 12, fontWeight: 700,
+                  color: CIRCUIT_COLORS[(ex.circuitGroup - 1) % CIRCUIT_COLORS.length],
+                  letterSpacing: '0.05em',
+                }}>
+                  Circuit {ex.circuitLetter} · Round {ex.circuitRound}/{ex.circuitTotalRounds}
+                </span>
+              </div>
+            )}
+
             {/* Section badge */}
             <div>
               <span

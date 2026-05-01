@@ -5,8 +5,11 @@ import { BottomNav } from '../../components/BottomNav'
 import {
   getWorkout,
   updateWorkout,
+  listCircuitPresets,
+  createCircuitPreset,
   type ExerciseBasic,
   type CreateWorkoutPayload,
+  type CircuitPreset,
 } from '../../lib/api'
 import { useInfiniteExercises } from '../../hooks/useInfiniteExercises'
 
@@ -25,6 +28,9 @@ interface SectionItemForm {
   restSeconds: number
   useTime: boolean
   expanded: boolean
+  circuitGroup: number | null
+  circuitRounds: number | null
+  circuitRestSeconds: number | null
 }
 
 interface SectionForm {
@@ -49,6 +55,9 @@ const SECTION_LABELS: Record<SectionType, string> = {
 const TAGS = ['Strength', 'Cardio', 'Mobility', 'Core', 'HIIT', 'Kettlebell', 'Barbell', 'Bodyweight']
 const SECTION_ORDER: SectionType[] = ['warmup', 'main', 'cooldown']
 
+const CIRCUIT_COLORS = ['#FF6B35', '#5AC8FA', '#BF5AF2', '#FFB830', '#30D158']
+const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E']
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function makeItemFromExercise(exercise: ExerciseBasic): SectionItemForm {
@@ -63,6 +72,9 @@ function makeItemFromExercise(exercise: ExerciseBasic): SectionItemForm {
     restSeconds: 60,
     useTime: false,
     expanded: false,
+    circuitGroup: null,
+    circuitRounds: null,
+    circuitRestSeconds: null,
   }
 }
 
@@ -101,6 +113,9 @@ function buildPayload(
           weightKg: null,
           restSeconds: item.restSeconds,
           notes: null,
+          circuitGroup: item.circuitGroup ?? null,
+          circuitRounds: item.circuitRounds ?? null,
+          circuitRestSeconds: item.circuitRestSeconds ?? null,
         })),
       })),
   }
@@ -130,7 +145,7 @@ export function EditWorkoutPage() {
   const [nameError, setNameError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Picker state
+  // Exercise picker state
   const [pickerSection, setPickerSection] = useState<SectionType | null>(null)
   const [pickerSearchInput, setPickerSearchInput] = useState('')
   const [pickerSearch, setPickerSearch] = useState('')
@@ -140,6 +155,14 @@ export function EditWorkoutPage() {
   const pickerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const pickerScrollRef = useRef<HTMLDivElement>(null)
+
+  // Preset state
+  const [presets, setPresets] = useState<CircuitPreset[]>([])
+  const [presetsLoaded, setPresetsLoaded] = useState(false)
+  const [showPresetPicker, setShowPresetPicker] = useState<SectionType | null>(null)
+  const [savingPresetForCircuit, setSavingPresetForCircuit] = useState<{ sectionType: SectionType; circuitGroup: number } | null>(null)
+  const [presetNameInput, setPresetNameInput] = useState('')
+  const [isSavingPreset, setIsSavingPreset] = useState(false)
 
   const {
     exercises: pickerResults,
@@ -178,6 +201,9 @@ export function EditWorkoutPage() {
                   restSeconds: item.restSeconds,
                   useTime: item.durationSeconds != null,
                   expanded: false,
+                  circuitGroup: item.circuitGroup ?? null,
+                  circuitRounds: item.circuitRounds ?? null,
+                  circuitRestSeconds: item.circuitRestSeconds ?? null,
                 })),
             }
           })
@@ -200,7 +226,77 @@ export function EditWorkoutPage() {
     }
   }, [pickerSection])
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Preset handlers ──────────────────────────────────────────────────────────
+
+  async function loadPresets() {
+    if (presetsLoaded) return
+    try {
+      const data = await listCircuitPresets()
+      setPresets(data)
+      setPresetsLoaded(true)
+    } catch { /* ignore */ }
+  }
+
+  async function handleSavePreset() {
+    if (!savingPresetForCircuit || !presetNameInput.trim()) return
+    const { sectionType, circuitGroup } = savingPresetForCircuit
+    const section = sections.find(s => s.type === sectionType)!
+    const circuitItems = section.items.filter(i => i.circuitGroup === circuitGroup)
+    const firstItem = circuitItems[0]
+
+    setIsSavingPreset(true)
+    try {
+      const preset = await createCircuitPreset({
+        name: presetNameInput.trim(),
+        rounds: firstItem?.circuitRounds ?? null,
+        circuitRestSeconds: firstItem?.circuitRestSeconds ?? null,
+        items: circuitItems.map((item, i) => ({
+          exerciseId: item.exerciseId,
+          exerciseName: item.exerciseName,
+          mediaUrl: item.mediaUrl,
+          orderIndex: i,
+          sets: item.sets,
+          reps: item.useTime ? null : item.reps,
+          durationSeconds: item.useTime ? item.durationSeconds : null,
+          weightKg: null,
+          restSeconds: item.restSeconds,
+          notes: null,
+        })),
+      })
+      setPresets(prev => [...prev, preset])
+      setSavingPresetForCircuit(null)
+      setPresetNameInput('')
+    } catch { /* ignore */ } finally {
+      setIsSavingPreset(false)
+    }
+  }
+
+  function insertPreset(sectionType: SectionType, preset: CircuitPreset) {
+    setSections(prev => prev.map(s => {
+      if (s.type !== sectionType) return s
+      const existingGroups = s.items.map(i => i.circuitGroup).filter((g): g is number => g != null)
+      const nextGroup = existingGroups.length > 0 ? Math.max(...existingGroups) + 1 : 1
+      const newItems: SectionItemForm[] = preset.items.map((item) => ({
+        id: crypto.randomUUID(),
+        exerciseId: item.exerciseId,
+        exerciseName: item.exerciseName,
+        mediaUrl: item.mediaUrl,
+        sets: item.sets,
+        reps: item.reps,
+        durationSeconds: item.durationSeconds,
+        restSeconds: item.restSeconds,
+        useTime: item.durationSeconds != null,
+        expanded: false,
+        circuitGroup: nextGroup,
+        circuitRounds: preset.rounds,
+        circuitRestSeconds: preset.circuitRestSeconds,
+      }))
+      return { ...s, items: [...s.items, ...newItems] }
+    }))
+    setShowPresetPicker(null)
+  }
+
+  // ── Exercise handlers ────────────────────────────────────────────────────────
 
   function toggleTag(tag: string) {
     setTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag])
@@ -247,6 +343,40 @@ export function EditWorkoutPage() {
       prev.map((s) =>
         s.type === sectionType
           ? { ...s, items: s.items.map((i) => i.id === itemId ? { ...i, ...patch } : i) }
+          : s
+      )
+    )
+  }
+
+  function updateCircuitRounds(sectionType: SectionType, circuitGroup: number, rounds: number) {
+    setSections((prev) =>
+      prev.map((s) =>
+        s.type === sectionType
+          ? {
+              ...s,
+              items: s.items.map((item) =>
+                item.circuitGroup === circuitGroup
+                  ? { ...item, circuitRounds: Math.max(1, rounds) }
+                  : item
+              ),
+            }
+          : s
+      )
+    )
+  }
+
+  function updateCircuitRestSeconds(sectionType: SectionType, circuitGroup: number, seconds: number) {
+    setSections((prev) =>
+      prev.map((s) =>
+        s.type === sectionType
+          ? {
+              ...s,
+              items: s.items.map((item) =>
+                item.circuitGroup === circuitGroup
+                  ? { ...item, circuitRestSeconds: Math.max(0, seconds) }
+                  : item
+              ),
+            }
           : s
       )
     )
@@ -402,123 +532,339 @@ export function EditWorkoutPage() {
                 </span>
               </div>
 
-              {section.items.map((item) => (
-                <div key={item.id}>
-                  <div className="create-exercise-row">
-                    <div className="create-exercise-thumb">
-                      {item.mediaUrl ? (
-                        <img
-                          src={item.mediaUrl}
-                          alt={item.exerciseName}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }}
-                        />
-                      ) : (
-                        <Dumbbell size={16} color="var(--text-muted)" />
-                      )}
-                    </div>
+              {(() => {
+                const existingCircuits = [...new Set(
+                  section.items.map(i => i.circuitGroup).filter((g): g is number => g != null)
+                )].sort((a, b) => a - b)
+                const maxCircuit = existingCircuits.length > 0 ? Math.max(...existingCircuits) : 0
 
+                return section.items.map((item, idx) => {
+                  const prevItem = section.items[idx - 1]
+                  const isInCircuit = item.circuitGroup != null
+                  const isFirstInCircuit = isInCircuit && prevItem?.circuitGroup !== item.circuitGroup
+                  const circuitColor = isInCircuit
+                    ? CIRCUIT_COLORS[(item.circuitGroup! - 1) % CIRCUIT_COLORS.length]
+                    : null
+                  const circuitLetter = isInCircuit
+                    ? CIRCUIT_LETTERS[(item.circuitGroup! - 1) % CIRCUIT_LETTERS.length]
+                    : null
+
+                  return (
                     <div
-                      style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-                      onClick={() => updateItem(section.type, item.id, { expanded: !item.expanded })}
+                      key={item.id}
+                      style={isInCircuit ? { borderLeft: `3px solid ${circuitColor}` } : undefined}
                     >
-                      <div className="create-exercise-name">{item.exerciseName}</div>
-                      <div className="create-exercise-meta">{formatItemMeta(item)}</div>
-                    </div>
+                      {isFirstInCircuit && (
+                        <div style={{
+                          padding: '5px 10px',
+                          fontSize: 11, fontWeight: 700, color: circuitColor!,
+                          background: `color-mix(in srgb, ${circuitColor} 8%, transparent)`,
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          flexWrap: 'wrap',
+                        }}>
+                          <span style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: circuitColor!, color: '#fff',
+                            fontSize: 9, fontWeight: 800,
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          }}>{circuitLetter}</span>
+                          Circuit {circuitLetter}
+                          {/* Rounds stepper */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const current = section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRounds ?? 1
+                                if (current > 1) updateCircuitRounds(section.type, item.circuitGroup!, current - 1)
+                              }}
+                              style={{
+                                width: 22, height: 22, borderRadius: '50%', border: `1px solid ${circuitColor}`,
+                                background: 'transparent', color: circuitColor!, fontSize: 14, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                              }}
+                            >−</button>
+                            <span style={{ fontSize: 12, color: circuitColor!, fontWeight: 700, minWidth: 14, textAlign: 'center' }}>
+                              {section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRounds ?? 1}×
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const current = section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRounds ?? 1
+                                updateCircuitRounds(section.type, item.circuitGroup!, current + 1)
+                              }}
+                              style={{
+                                width: 22, height: 22, borderRadius: '50%', border: `1px solid ${circuitColor}`,
+                                background: 'transparent', color: circuitColor!, fontSize: 14, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                              }}
+                            >+</button>
+                          </div>
+                          {/* Circuit rest stepper */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
+                            <span style={{ fontSize: 10, color: circuitColor!, opacity: 0.8, marginRight: 2 }}>rest</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const current = section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRestSeconds ?? 60
+                                if (current > 0) updateCircuitRestSeconds(section.type, item.circuitGroup!, current - 15)
+                              }}
+                              style={{
+                                width: 22, height: 22, borderRadius: '50%', border: `1px solid ${circuitColor}`,
+                                background: 'transparent', color: circuitColor!, fontSize: 14, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                              }}
+                            >−</button>
+                            <span style={{ fontSize: 12, color: circuitColor!, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>
+                              {section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRestSeconds ?? 60}s
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                const current = section.items.find((i) => i.circuitGroup === item.circuitGroup)?.circuitRestSeconds ?? 60
+                                updateCircuitRestSeconds(section.type, item.circuitGroup!, current + 15)
+                              }}
+                              style={{
+                                width: 22, height: 22, borderRadius: '50%', border: `1px solid ${circuitColor}`,
+                                background: 'transparent', color: circuitColor!, fontSize: 14, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                              }}
+                            >+</button>
+                          </div>
+                          {/* Save as preset */}
+                          {savingPresetForCircuit?.circuitGroup === item.circuitGroup && savingPresetForCircuit?.sectionType === section.type ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 0 100%', paddingTop: 4 }}>
+                              <input
+                                type="text"
+                                placeholder="Preset name…"
+                                value={presetNameInput}
+                                onChange={e => setPresetNameInput(e.target.value)}
+                                style={{
+                                  flex: 1, padding: '4px 8px', borderRadius: 6, fontSize: 12,
+                                  border: '1px solid var(--border)', background: 'var(--surface-2)',
+                                  color: 'var(--text)',
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void handleSavePreset()}
+                                disabled={isSavingPreset || !presetNameInput.trim()}
+                                style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                                  background: circuitColor!, color: '#fff', border: 'none', cursor: 'pointer',
+                                }}
+                              >
+                                {isSavingPreset ? '…' : 'Save'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setSavingPresetForCircuit(null); setPresetNameInput('') }}
+                                style={{ fontSize: 14, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                              >✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setSavingPresetForCircuit({ sectionType: section.type, circuitGroup: item.circuitGroup! })}
+                              style={{
+                                fontSize: 11, color: circuitColor!, background: 'none', border: 'none',
+                                cursor: 'pointer', opacity: 0.8, marginLeft: 4,
+                              }}
+                              title="Save as preset"
+                            >
+                              🔖
+                            </button>
+                          )}
+                        </div>
+                      )}
 
-                    <button
-                      type="button"
-                      onClick={() => updateItem(section.type, item.id, { expanded: !item.expanded })}
-                      style={{ color: 'var(--text-muted)', flexShrink: 0, padding: 4 }}
-                    >
-                      {item.expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
+                      <div className="create-exercise-row">
+                        <div className="create-exercise-thumb">
+                          {item.mediaUrl ? (
+                            <img
+                              src={item.mediaUrl}
+                              alt={item.exerciseName}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }}
+                            />
+                          ) : (
+                            <Dumbbell size={16} color="var(--text-muted)" />
+                          )}
+                        </div>
 
-                    <button
-                      type="button"
-                      className="create-exercise-delete"
-                      onClick={() => removeItem(section.type, item.id)}
-                      aria-label="Remove"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                        <div
+                          style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                          onClick={() => updateItem(section.type, item.id, { expanded: !item.expanded })}
+                        >
+                          <div className="create-exercise-name">{item.exerciseName}</div>
+                          <div className="create-exercise-meta">{formatItemMeta(item)}</div>
+                        </div>
 
-                  {item.expanded && (
-                    <div className="create-exercise-config">
-                      <div className="create-config-field">
-                        <span className="create-config-label">Sets</span>
-                        <input
-                          type="number"
-                          className="create-config-input"
-                          value={item.sets}
-                          min={1}
-                          onChange={(e) =>
-                            updateItem(section.type, item.id, { sets: Math.max(1, parseInt(e.target.value) || 1) })
-                          }
-                        />
-                      </div>
-
-                      <div className="create-config-field">
                         <button
                           type="button"
-                          className="create-config-label-btn"
-                          style={{ color }}
-                          onClick={() => updateItem(section.type, item.id, { useTime: !item.useTime })}
+                          onClick={() => updateItem(section.type, item.id, { expanded: !item.expanded })}
+                          style={{ color: 'var(--text-muted)', flexShrink: 0, padding: 4 }}
                         >
-                          {item.useTime ? 'Secs' : 'Reps'}
+                          {item.expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
-                        {item.useTime ? (
-                          <input
-                            type="number"
-                            className="create-config-input"
-                            value={item.durationSeconds ?? ''}
-                            min={1}
-                            placeholder="30"
-                            onChange={(e) =>
-                              updateItem(section.type, item.id, {
-                                durationSeconds: e.target.value ? parseInt(e.target.value) : null,
-                              })
-                            }
-                          />
-                        ) : (
-                          <input
-                            type="number"
-                            className="create-config-input"
-                            value={item.reps ?? ''}
-                            min={1}
-                            placeholder="10"
-                            onChange={(e) =>
-                              updateItem(section.type, item.id, {
-                                reps: e.target.value ? parseInt(e.target.value) : null,
-                              })
-                            }
-                          />
-                        )}
+
+                        <button
+                          type="button"
+                          className="create-exercise-delete"
+                          onClick={() => removeItem(section.type, item.id)}
+                          aria-label="Remove"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
 
-                      <div className="create-config-field">
-                        <span className="create-config-label">Rest (s)</span>
-                        <input
-                          type="number"
-                          className="create-config-input"
-                          value={item.restSeconds}
-                          min={0}
-                          onChange={(e) =>
-                            updateItem(section.type, item.id, {
-                              restSeconds: Math.max(0, parseInt(e.target.value) || 0),
-                            })
-                          }
-                        />
-                      </div>
+                      {item.expanded && (
+                        <div className="create-exercise-config">
+                          <div className="create-config-field">
+                            <span className="create-config-label">Sets</span>
+                            <input
+                              type="number"
+                              className="create-config-input"
+                              value={item.sets}
+                              min={1}
+                              onChange={(e) =>
+                                updateItem(section.type, item.id, { sets: Math.max(1, parseInt(e.target.value) || 1) })
+                              }
+                            />
+                          </div>
+
+                          <div className="create-config-field">
+                            <button
+                              type="button"
+                              className="create-config-label-btn"
+                              style={{ color }}
+                              onClick={() => updateItem(section.type, item.id, { useTime: !item.useTime })}
+                            >
+                              {item.useTime ? 'Secs' : 'Reps'}
+                            </button>
+                            {item.useTime ? (
+                              <input
+                                type="number"
+                                className="create-config-input"
+                                value={item.durationSeconds ?? ''}
+                                min={1}
+                                placeholder="30"
+                                onChange={(e) =>
+                                  updateItem(section.type, item.id, {
+                                    durationSeconds: e.target.value ? parseInt(e.target.value) : null,
+                                  })
+                                }
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                className="create-config-input"
+                                value={item.reps ?? ''}
+                                min={1}
+                                placeholder="10"
+                                onChange={(e) =>
+                                  updateItem(section.type, item.id, {
+                                    reps: e.target.value ? parseInt(e.target.value) : null,
+                                  })
+                                }
+                              />
+                            )}
+                          </div>
+
+                          <div className="create-config-field">
+                            <span className="create-config-label">Rest (s)</span>
+                            <input
+                              type="number"
+                              className="create-config-input"
+                              value={item.restSeconds}
+                              min={0}
+                              onChange={(e) =>
+                                updateItem(section.type, item.id, {
+                                  restSeconds: Math.max(0, parseInt(e.target.value) || 0),
+                                })
+                              }
+                            />
+                          </div>
+
+                          {/* Circuit assignment */}
+                          <div style={{ flex: '1 0 100%', paddingTop: 8, borderTop: '1px solid var(--border)', marginTop: 4 }}>
+                            <span className="create-config-label" style={{ display: 'block', marginBottom: 6 }}>
+                              Circuit group
+                            </span>
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                style={{
+                                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                                  background: item.circuitGroup == null ? 'var(--surface-2)' : 'transparent',
+                                  color: item.circuitGroup == null ? 'var(--text)' : 'var(--text-muted)',
+                                  border: '1.5px solid var(--border)', cursor: 'pointer',
+                                }}
+                                onClick={() => updateItem(section.type, item.id, { circuitGroup: null })}
+                              >
+                                None
+                              </button>
+                              {existingCircuits.map((g) => {
+                                const cl = CIRCUIT_COLORS[(g - 1) % CIRCUIT_COLORS.length]
+                                return (
+                                  <button
+                                    key={g}
+                                    type="button"
+                                    style={{
+                                      padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                                      background: item.circuitGroup === g
+                                        ? cl
+                                        : `color-mix(in srgb, ${cl} 14%, transparent)`,
+                                      color: item.circuitGroup === g ? '#fff' : cl,
+                                      border: 'none', cursor: 'pointer',
+                                    }}
+                                    onClick={() => updateItem(section.type, item.id, { circuitGroup: g })}
+                                  >
+                                    {CIRCUIT_LETTERS[(g - 1) % CIRCUIT_LETTERS.length]}
+                                  </button>
+                                )
+                              })}
+                              {maxCircuit < 5 && (
+                                <button
+                                  type="button"
+                                  style={{
+                                    padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                                    background: 'transparent', color: 'var(--text-muted)',
+                                    border: '1.5px dashed var(--border)', cursor: 'pointer',
+                                  }}
+                                  onClick={() => updateItem(section.type, item.id, { circuitGroup: maxCircuit + 1 })}
+                                >
+                                  + New
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  )
+                })
+              })()}
 
               <button type="button" className="add-exercise-btn" onClick={() => openPicker(section.type)}>
                 <Plus size={14} strokeWidth={2.5} />
                 Add exercise
               </button>
+
+              {/* From saved circuit button */}
+              {(!presetsLoaded || presets.length > 0) && (
+                <button
+                  type="button"
+                  className="add-exercise-btn"
+                  onClick={() => { void loadPresets(); setShowPresetPicker(section.type) }}
+                  style={{ marginTop: 6, color: 'var(--text-muted)', borderColor: 'var(--border)' }}
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                  From saved circuit
+                </button>
+              )}
             </div>
           )
         })}
@@ -557,7 +903,7 @@ export function EditWorkoutPage() {
         </button>
       </div>
 
-      {/* Picker overlay */}
+      {/* Exercise picker overlay */}
       <div
         className={`bottom-sheet-overlay${pickerSection ? ' open' : ''}`}
         onClick={closePicker}
@@ -664,6 +1010,75 @@ export function EditWorkoutPage() {
               Loading more...
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Preset picker overlay */}
+      <div
+        className={`bottom-sheet-overlay${showPresetPicker ? ' open' : ''}`}
+        onClick={() => setShowPresetPicker(null)}
+      />
+
+      {/* Preset picker bottom sheet */}
+      <div className={`bottom-sheet${showPresetPicker ? ' open' : ''}`}>
+        <div className="bottom-sheet-handle" />
+
+        <div className="bottom-sheet-header">
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', marginBottom: 4,
+          }}>
+            <div className="bottom-sheet-title">
+              Saved circuits
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPresetPicker(null)}
+              style={{ color: 'var(--text-muted)', padding: 4 }}
+              aria-label="Close preset picker"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="bottom-sheet-content">
+          {!presetsLoaded && (
+            <div style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
+              Loading…
+            </div>
+          )}
+
+          {presetsLoaded && presets.length === 0 && (
+            <div style={{
+              padding: '32px 20px', textAlign: 'center',
+              color: 'var(--text-muted)', fontSize: 13,
+            }}>
+              No saved circuits yet. Save a circuit using the bookmark icon in a circuit header.
+            </div>
+          )}
+
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => showPresetPicker && insertPreset(showPresetPicker, preset)}
+              style={{
+                width: '100%', textAlign: 'left', padding: '14px 20px',
+                background: 'none', border: 'none', borderBottom: '1px solid var(--border)',
+                cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+                {preset.name}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {preset.items.length} {preset.items.length === 1 ? 'exercise' : 'exercises'}
+                {preset.rounds != null ? ` · ${preset.rounds} rounds` : ''}
+                {preset.circuitRestSeconds != null ? ` · ${preset.circuitRestSeconds}s rest` : ''}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
