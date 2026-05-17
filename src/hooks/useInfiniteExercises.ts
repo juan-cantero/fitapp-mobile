@@ -8,6 +8,8 @@ export function useInfiniteExercises(
   muscleFilter?: MuscleGroup | null,
   isCombined?: boolean,
   scrollRoot?: React.RefObject<HTMLElement | null>,
+  equipment?: string,
+  sortBy?: 'name' | 'mostUsed',
 ) {
   const [exercises, setExercises] = useState<ExerciseBasic[]>([])
   const [total, setTotal] = useState(0)
@@ -28,7 +30,7 @@ export function useInfiniteExercises(
     setTotal(0)
     setPage(1)
 
-    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
+    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined, equipment, sortBy)
       .then((res) => {
         if (cancelled) return
         setExercises(res.data)
@@ -41,7 +43,7 @@ export function useInfiniteExercises(
       .finally(() => { if (!cancelled) setIsLoading(false) })
 
     return () => { cancelled = true }
-  }, [search, muscleFilter, isCombined])
+  }, [search, muscleFilter, isCombined, equipment, sortBy])
 
   // Keep loadMore in a ref so the observer never stales
   const loadMoreRef = useRef<() => void>(() => {})
@@ -49,7 +51,7 @@ export function useInfiniteExercises(
     if (isFetchingMore || !hasMore) return
     setIsFetchingMore(true)
     const nextPage = page + 1
-    listExercises(search || undefined, nextPage, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
+    listExercises(search || undefined, nextPage, PAGE_SIZE, muscleFilter ?? undefined, isCombined, equipment, sortBy)
       .then((res) => {
         setExercises((prev) => [...prev, ...res.data])
         setTotal(res.total)
@@ -74,7 +76,7 @@ export function useInfiniteExercises(
   const retry = () => {
     setIsLoading(true)
     setError(null)
-    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
+    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined, equipment, sortBy)
       .then((res) => { setExercises(res.data); setTotal(res.total); setPage(1) })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
       .finally(() => setIsLoading(false))

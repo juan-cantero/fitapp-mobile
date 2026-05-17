@@ -10,6 +10,8 @@ import {
   type ExerciseBasic,
   type CreateWorkoutPayload,
   type CircuitPreset,
+  MUSCLE_GROUP_LABELS,
+  EQUIPMENT_LABELS,
 } from '../../lib/api'
 import { useInfiniteExercises } from '../../hooks/useInfiniteExercises'
 
@@ -150,14 +152,19 @@ export function CreateWorkoutPage() {
   const [pickerSection, setPickerSection] = useState<SectionType | null>(null)
   const [pickerSearchInput, setPickerSearchInput] = useState('')
   const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerEquipment, setPickerEquipment] = useState<string>('')
+  const [pickerMuscle, setPickerMuscle] = useState<string>('')
 
   // Exercise picker UX state
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
+  const [openFilter, setOpenFilter] = useState<'equipment' | 'muscle' | null>(null)
 
   const pickerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const pickerScrollRef = useRef<HTMLDivElement>(null)
+
+  const pickerSortBy: 'name' | 'mostUsed' = !pickerSearch && !pickerEquipment && !pickerMuscle ? 'mostUsed' : 'name'
 
   // Preset state
   const [presets, setPresets] = useState<CircuitPreset[]>([])
@@ -172,7 +179,7 @@ export function CreateWorkoutPage() {
     isLoading: isSearching,
     isFetchingMore: isPickerFetchingMore,
     sentinelRef: pickerSentinelRef,
-  } = useInfiniteExercises(pickerSearch, null, undefined, pickerScrollRef)
+  } = useInfiniteExercises(pickerSearch, pickerMuscle as any || null, undefined, pickerScrollRef, pickerEquipment || undefined, pickerSortBy)
 
   function handlePickerSearchChange(value: string) {
     setPickerSearchInput(value)
@@ -331,6 +338,7 @@ export function CreateWorkoutPage() {
 
   function closePicker() {
     setPickerSection(null)
+    setOpenFilter(null)
   }
 
   function toggleExercisePreview(exerciseId: string) {
@@ -996,9 +1004,132 @@ export function CreateWorkoutPage() {
               onChange={(e) => handlePickerSearchChange(e.target.value)}
             />
           </div>
+
+          {/* Filter chips */}
+          <div style={{ marginTop: 10 }}>
+            {/* Chip row */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {/* Equipment chip */}
+              <button
+                type="button"
+                onClick={() => setOpenFilter(openFilter === 'equipment' ? null : 'equipment')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 12, padding: '5px 10px',
+                  borderRadius: 14,
+                  border: `1.5px solid ${pickerEquipment ? 'var(--primary)' : openFilter === 'equipment' ? 'var(--primary)' : 'var(--border)'}`,
+                  background: pickerEquipment
+                    ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                    : openFilter === 'equipment'
+                      ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
+                      : 'var(--surface-2)',
+                  color: pickerEquipment || openFilter === 'equipment' ? 'var(--primary)' : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {pickerEquipment ? EQUIPMENT_LABELS[pickerEquipment] : 'Equipment'}
+                <ChevronDown size={11} strokeWidth={2.5} style={{ transform: openFilter === 'equipment' ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
+
+              {/* Muscle chip */}
+              <button
+                type="button"
+                onClick={() => setOpenFilter(openFilter === 'muscle' ? null : 'muscle')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 12, padding: '5px 10px',
+                  borderRadius: 14,
+                  border: `1.5px solid ${pickerMuscle ? 'var(--primary)' : openFilter === 'muscle' ? 'var(--primary)' : 'var(--border)'}`,
+                  background: pickerMuscle
+                    ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                    : openFilter === 'muscle'
+                      ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
+                      : 'var(--surface-2)',
+                  color: pickerMuscle || openFilter === 'muscle' ? 'var(--primary)' : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {pickerMuscle ? MUSCLE_GROUP_LABELS[pickerMuscle] : 'Muscle'}
+                <ChevronDown size={11} strokeWidth={2.5} style={{ transform: openFilter === 'muscle' ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
+
+              {/* Clear */}
+              {(pickerEquipment || pickerMuscle) && (
+                <button
+                  type="button"
+                  onClick={() => { setPickerEquipment(''); setPickerMuscle(''); setOpenFilter(null) }}
+                  style={{
+                    fontSize: 12, padding: '5px 10px',
+                    borderRadius: 14,
+                    border: '1.5px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    flexShrink: 0,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Options panel */}
+            {openFilter && (
+              <div style={{
+                marginTop: 8,
+                padding: '10px 4px',
+                borderRadius: 10,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                display: 'flex', flexWrap: 'wrap', gap: 6,
+              }}>
+                {openFilter === 'equipment' &&
+                  Object.entries(EQUIPMENT_LABELS).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => { setPickerEquipment(value); setOpenFilter(null) }}
+                      style={{
+                        fontSize: 12, padding: '4px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${pickerEquipment === value ? 'var(--primary)' : 'var(--border)'}`,
+                        background: pickerEquipment === value ? 'var(--primary)' : 'transparent',
+                        color: pickerEquipment === value ? 'white' : 'var(--text)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))
+                }
+                {openFilter === 'muscle' &&
+                  Object.entries(MUSCLE_GROUP_LABELS).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => { setPickerMuscle(value); setOpenFilter(null) }}
+                      style={{
+                        fontSize: 12, padding: '4px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${pickerMuscle === value ? 'var(--primary)' : 'var(--border)'}`,
+                        background: pickerMuscle === value ? 'var(--primary)' : 'transparent',
+                        color: pickerMuscle === value ? 'white' : 'var(--text)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
         </div>
 
         <div ref={pickerScrollRef} className="bottom-sheet-content">
+          {!pickerSearch && !pickerEquipment && !pickerMuscle && pickerResults.length > 0 && !isSearching && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 20px 4px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Most used
+            </div>
+          )}
+
           {isSearching && (
             <div style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
               Searching…
@@ -1010,7 +1141,7 @@ export function CreateWorkoutPage() {
               padding: '32px 20px', textAlign: 'center',
               color: 'var(--text-muted)', fontSize: 13,
             }}>
-              {pickerSearch ? 'No exercises found' : 'No exercises available'}
+              {pickerSearch || pickerEquipment || pickerMuscle ? 'No exercises found' : 'No exercises available'}
             </div>
           )}
 

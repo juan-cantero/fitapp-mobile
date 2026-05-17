@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Search, Dumbbell, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Search, Dumbbell, ChevronDown, ChevronUp, X, Image } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import {
   getWorkout,
   updateWorkout,
+  uploadWorkoutCover,
   listCircuitPresets,
   createCircuitPreset,
   type ExerciseBasic,
   type CreateWorkoutPayload,
   type CircuitPreset,
+  MUSCLE_GROUP_LABELS,
+  EQUIPMENT_LABELS,
 } from '../../lib/api'
 import { useInfiniteExercises } from '../../hooks/useInfiniteExercises'
 
@@ -145,16 +148,27 @@ export function EditWorkoutPage() {
   const [nameError, setNameError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Cover image state
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null)
+  const [isUploadingCover, setIsUploadingCover] = useState(false)
+  const [coverUploadError, setCoverUploadError] = useState<string | null>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
+
   // Exercise picker state
   const [pickerSection, setPickerSection] = useState<SectionType | null>(null)
   const [pickerSearchInput, setPickerSearchInput] = useState('')
   const [pickerSearch, setPickerSearch] = useState('')
+  const [pickerEquipment, setPickerEquipment] = useState<string>('')
+  const [pickerMuscle, setPickerMuscle] = useState<string>('')
   const [justAdded, setJustAdded] = useState<Set<string>>(new Set())
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null)
+  const [openFilter, setOpenFilter] = useState<'equipment' | 'muscle' | null>(null)
 
   const pickerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const pickerScrollRef = useRef<HTMLDivElement>(null)
+
+  const pickerSortBy: 'name' | 'mostUsed' = !pickerSearch && !pickerEquipment && !pickerMuscle ? 'mostUsed' : 'name'
 
   // Preset state
   const [presets, setPresets] = useState<CircuitPreset[]>([])
@@ -169,7 +183,7 @@ export function EditWorkoutPage() {
     isLoading: isSearching,
     isFetchingMore: isPickerFetchingMore,
     sentinelRef: pickerSentinelRef,
-  } = useInfiniteExercises(pickerSearch, null, undefined, pickerScrollRef)
+  } = useInfiniteExercises(pickerSearch, pickerMuscle as any || null, undefined, pickerScrollRef, pickerEquipment || undefined, pickerSortBy)
 
   // Load workout data into form
   useEffect(() => {
@@ -182,6 +196,7 @@ export function EditWorkoutPage() {
         setDescription(workout.description ?? '')
         setTags(workout.tags)
         setIsPublic(workout.visibility === 'public')
+        setCoverImageUrl(workout.coverImageUrl)
         setSections(
           SECTION_ORDER.map((type) => {
             const found = workout.sections.find((s) => s.type === type)
@@ -309,7 +324,7 @@ export function EditWorkoutPage() {
     setPickerSection(section)
   }
 
-  function closePicker() { setPickerSection(null) }
+  function closePicker() { setPickerSection(null); setOpenFilter(null) }
 
   function toggleExercisePreview(exerciseId: string) {
     setExpandedExerciseId((prev) => prev === exerciseId ? null : exerciseId)
@@ -400,6 +415,22 @@ export function EditWorkoutPage() {
     }
   }
 
+  async function handleCoverUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !id) return
+    setIsUploadingCover(true)
+    setCoverUploadError(null)
+    try {
+      const updated = await uploadWorkoutCover(id, file)
+      setCoverImageUrl(updated.coverImageUrl)
+    } catch (err) {
+      setCoverUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setIsUploadingCover(false)
+      if (coverInputRef.current) coverInputRef.current.value = ''
+    }
+  }
+
   // ── Loading / error states ────────────────────────────────────────────────────
 
   if (isLoadingWorkout) {
@@ -480,6 +511,68 @@ export function EditWorkoutPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+        </div>
+
+        {/* Cover image */}
+        <div className="form-field">
+          <span className="form-label">Cover image</span>
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            style={{ display: 'none' }}
+            onChange={(e) => void handleCoverUpload(e)}
+          />
+          <button
+            type="button"
+            onClick={() => coverInputRef.current?.click()}
+            disabled={isUploadingCover}
+            style={{
+              width: '100%',
+              height: 160,
+              borderRadius: 12,
+              border: coverImageUrl ? 'none' : '1.5px dashed var(--border)',
+              background: coverImageUrl ? 'transparent' : 'var(--surface-2)',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              padding: 0,
+            }}
+          >
+            {coverImageUrl ? (
+              <>
+                <img
+                  src={coverImageUrl}
+                  alt="Cover"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'rgba(0,0,0,0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, color: 'white', fontSize: 13, fontWeight: 600,
+                }}>
+                  <Image size={15} strokeWidth={2} />
+                  {isUploadingCover ? 'Uploading…' : 'Change cover'}
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
+                <Image size={28} strokeWidth={1.5} />
+                <span style={{ fontSize: 13 }}>{isUploadingCover ? 'Uploading…' : 'Add cover image'}</span>
+              </div>
+            )}
+          </button>
+          {coverUploadError && (
+            <span style={{ fontSize: 12, color: 'var(--danger)', marginTop: 4, display: 'block' }}>
+              {coverUploadError}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+            JPEG, PNG or WEBP · max 10 MB
+          </span>
         </div>
 
         {/* Tags */}
@@ -932,9 +1025,132 @@ export function EditWorkoutPage() {
               onChange={(e) => handlePickerSearchChange(e.target.value)}
             />
           </div>
+
+          {/* Filter chips */}
+          <div style={{ marginTop: 10 }}>
+            {/* Chip row */}
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {/* Equipment chip */}
+              <button
+                type="button"
+                onClick={() => setOpenFilter(openFilter === 'equipment' ? null : 'equipment')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 12, padding: '5px 10px',
+                  borderRadius: 14,
+                  border: `1.5px solid ${pickerEquipment ? 'var(--primary)' : openFilter === 'equipment' ? 'var(--primary)' : 'var(--border)'}`,
+                  background: pickerEquipment
+                    ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                    : openFilter === 'equipment'
+                      ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
+                      : 'var(--surface-2)',
+                  color: pickerEquipment || openFilter === 'equipment' ? 'var(--primary)' : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {pickerEquipment ? EQUIPMENT_LABELS[pickerEquipment] : 'Equipment'}
+                <ChevronDown size={11} strokeWidth={2.5} style={{ transform: openFilter === 'equipment' ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
+
+              {/* Muscle chip */}
+              <button
+                type="button"
+                onClick={() => setOpenFilter(openFilter === 'muscle' ? null : 'muscle')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  fontSize: 12, padding: '5px 10px',
+                  borderRadius: 14,
+                  border: `1.5px solid ${pickerMuscle ? 'var(--primary)' : openFilter === 'muscle' ? 'var(--primary)' : 'var(--border)'}`,
+                  background: pickerMuscle
+                    ? 'color-mix(in srgb, var(--primary) 15%, transparent)'
+                    : openFilter === 'muscle'
+                      ? 'color-mix(in srgb, var(--primary) 8%, transparent)'
+                      : 'var(--surface-2)',
+                  color: pickerMuscle || openFilter === 'muscle' ? 'var(--primary)' : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {pickerMuscle ? MUSCLE_GROUP_LABELS[pickerMuscle] : 'Muscle'}
+                <ChevronDown size={11} strokeWidth={2.5} style={{ transform: openFilter === 'muscle' ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+              </button>
+
+              {/* Clear */}
+              {(pickerEquipment || pickerMuscle) && (
+                <button
+                  type="button"
+                  onClick={() => { setPickerEquipment(''); setPickerMuscle(''); setOpenFilter(null) }}
+                  style={{
+                    fontSize: 12, padding: '5px 10px',
+                    borderRadius: 14,
+                    border: '1.5px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    flexShrink: 0,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Options panel */}
+            {openFilter && (
+              <div style={{
+                marginTop: 8,
+                padding: '10px 4px',
+                borderRadius: 10,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--border)',
+                display: 'flex', flexWrap: 'wrap', gap: 6,
+              }}>
+                {openFilter === 'equipment' &&
+                  Object.entries(EQUIPMENT_LABELS).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => { setPickerEquipment(value); setOpenFilter(null) }}
+                      style={{
+                        fontSize: 12, padding: '4px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${pickerEquipment === value ? 'var(--primary)' : 'var(--border)'}`,
+                        background: pickerEquipment === value ? 'var(--primary)' : 'transparent',
+                        color: pickerEquipment === value ? 'white' : 'var(--text)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))
+                }
+                {openFilter === 'muscle' &&
+                  Object.entries(MUSCLE_GROUP_LABELS).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => { setPickerMuscle(value); setOpenFilter(null) }}
+                      style={{
+                        fontSize: 12, padding: '4px 10px',
+                        borderRadius: 12,
+                        border: `1px solid ${pickerMuscle === value ? 'var(--primary)' : 'var(--border)'}`,
+                        background: pickerMuscle === value ? 'var(--primary)' : 'transparent',
+                        color: pickerMuscle === value ? 'white' : 'var(--text)',
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
         </div>
 
         <div ref={pickerScrollRef} className="bottom-sheet-content">
+          {!pickerSearch && !pickerEquipment && !pickerMuscle && pickerResults.length > 0 && !isSearching && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 20px 4px', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              Most used
+            </div>
+          )}
+
           {isSearching && (
             <div style={{ padding: '16px 20px', color: 'var(--text-muted)', fontSize: 13 }}>
               Searching…
@@ -942,7 +1158,7 @@ export function EditWorkoutPage() {
           )}
           {!isSearching && pickerResults.length === 0 && (
             <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              {pickerSearch ? 'No exercises found' : 'No exercises available'}
+              {pickerSearch || pickerEquipment || pickerMuscle ? 'No exercises found' : 'No exercises available'}
             </div>
           )}
           {pickerResults.map((exercise) => {

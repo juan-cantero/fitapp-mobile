@@ -395,11 +395,15 @@ export function listExercises(
   limit = 50,
   primaryMuscle?: string,
   isCombined?: boolean,
+  equipment?: string,
+  sortBy?: 'name' | 'mostUsed',
 ): Promise<ExercisesListResponse> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) })
   if (search) params.set('search', search)
   if (primaryMuscle) params.set('primaryMuscle', primaryMuscle)
   if (isCombined) params.set('isCombined', 'true')
+  if (equipment) params.set('equipment', equipment)
+  if (sortBy) params.set('sortBy', sortBy)
   return request(`/exercises?${params}`)
 }
 
@@ -458,6 +462,39 @@ export function updateWorkout(id: string, payload: CreateWorkoutPayload): Promis
     method: 'PATCH',
     body: JSON.stringify(payload),
   })
+}
+
+export async function uploadWorkoutCover(id: string, file: File): Promise<Workout> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`${API_BASE}/workouts/${id}/cover`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  })
+
+  if (res.status === 401) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return uploadWorkoutCover(id, file)
+    clearAuth()
+    window.dispatchEvent(new Event('fitapp:unauthorized'))
+    throw new Error('Unauthorized')
+  }
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`
+    try {
+      const body = await res.json() as { message?: string }
+      if (body.message) message = body.message
+    } catch { /* ignore */ }
+    throw new Error(message)
+  }
+
+  return res.json() as Promise<Workout>
 }
 
 // ── Circuit Preset API ─────────────────────────────────────────────────────────
@@ -687,4 +724,23 @@ export function addFavorite(exerciseId: string): Promise<void> {
 
 export function removeFavorite(exerciseId: string): Promise<void> {
   return request<void>(`/exercises/${exerciseId}/favorite`, { method: 'DELETE' })
+}
+
+export const MUSCLE_GROUP_LABELS: Record<string, string> = {
+  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes',
+  adductors: 'Adductors', abductors: 'Abductors', calves: 'Calves',
+  chest: 'Chest', back: 'Back', shoulders: 'Shoulders',
+  biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms', core: 'Core',
+}
+
+export const EQUIPMENT_LABELS: Record<string, string> = {
+  barbell: 'Barbell', dumbbell: 'Dumbbell', kettlebell: 'Kettlebell',
+  cable: 'Cable', machine: 'Machine', smith_machine: 'Smith Machine',
+  bodyweight: 'Bodyweight', resistance_band: 'Resistance Band',
+  trx: 'TRX', pull_up_bar: 'Pull-up Bar', plyo_box: 'Plyo Box',
+  step: 'Step', medicine_ball: 'Medicine Ball', macebell: 'Macebell',
+  clubbell: 'Clubbell', weight_vest: 'Weight Vest', ankle_weights: 'Ankle Weights',
+  parallel_bars: 'Parallel Bars', stability_ball: 'Stability Ball',
+  gymnastic_rings: 'Gymnastic Rings', jump_rope: 'Jump Rope',
+  battle_rope: 'Battle Rope', agility_ladder: 'Agility Ladder', cone: 'Cone',
 }

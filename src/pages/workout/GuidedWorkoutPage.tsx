@@ -371,7 +371,9 @@ export function GuidedWorkoutPage() {
 
   function playBeep(frequency: number, duration: number) {
     try {
-      const ctx = new AudioContext()
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext()
+      const ctx = audioCtxRef.current
+      if (ctx.state === 'suspended') ctx.resume()
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.connect(gain)
@@ -382,7 +384,6 @@ export function GuidedWorkoutPage() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
       osc.start(ctx.currentTime)
       osc.stop(ctx.currentTime + duration)
-      osc.onended = () => ctx.close()
     } catch {
       // Audio not supported — silently skip
     }
@@ -415,6 +416,24 @@ export function GuidedWorkoutPage() {
   // Exercise timer (for duration-based exercises)
   // Starts when phase === 'exercise' and current exercise has durationSeconds
   // -------------------------------------------------------------------------
+
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  // Unlock AudioContext on first user touch (mobile autoplay policy)
+  useEffect(() => {
+    function unlock() {
+      try {
+        if (!audioCtxRef.current) audioCtxRef.current = new AudioContext()
+        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume()
+      } catch { /* not supported */ }
+    }
+    document.addEventListener('touchstart', unlock, { once: true })
+    document.addEventListener('click', unlock, { once: true })
+    return () => {
+      document.removeEventListener('touchstart', unlock)
+      document.removeEventListener('click', unlock)
+    }
+  }, [])
 
   const handleCompleteSetRef = useRef<() => void>(() => {})
 
