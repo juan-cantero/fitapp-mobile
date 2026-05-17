@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, Flame, Clock, Dumbbell, TrendingUp, ChevronRight, Play } from 'lucide-react'
+import { Flame, Clock, Dumbbell, TrendingUp, ChevronRight, Play } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
+import { AppHeader } from '../../components/AppHeader'
 import { getUser } from '../../lib/auth'
 import { getMyStats, listMyWorkouts, getMySessions } from '../../lib/api'
 import type { UserStats, Workout, Session } from '../../lib/api'
@@ -69,12 +70,7 @@ export function HomePage() {
 
   return (
     <div className="phone-shell">
-      <header className="app-header">
-        <span className="header-title">{getGreeting()}, {firstName} 👋</span>
-        <button className="header-icon-btn" aria-label="Notifications">
-          <Bell size={20} />
-        </button>
-      </header>
+      <AppHeader title={`${getGreeting()}, ${firstName} 👋`} />
 
       <div className="content">
         {/* Streak banner */}

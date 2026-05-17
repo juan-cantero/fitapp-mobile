@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw, Pencil, X } from 'lucide-react'
+import { ArrowLeft, Clock, Play, Dumbbell, RotateCcw, Pencil, X, Download } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
 import { getWorkout, type Workout, type WorkoutSection, type WorkoutSectionItem } from '../../lib/api'
 import { getUser } from '../../lib/auth'
+import { downloadMarkdown, workoutToMarkdown } from '../../lib/markdown'
 
 const CIRCUIT_COLORS = ['#FF6B35', '#5AC8FA', '#BF5AF2', '#FFB830', '#30D158']
 const CIRCUIT_LETTERS = ['A', 'B', 'C', 'D', 'E']
@@ -236,6 +237,18 @@ export function WorkoutDetailPage() {
                 Edit
               </button>
             )}
+            <button
+              className="header-action-btn"
+              onClick={() => downloadMarkdown(
+                workoutToMarkdown(workout),
+                `${workout.name.toLowerCase().replace(/\s+/g, '-')}.md`,
+              )}
+              aria-label="Download workout as markdown"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <Download size={14} />
+              Export
+            </button>
             <button
               className="header-action-btn"
               onClick={handleStart}

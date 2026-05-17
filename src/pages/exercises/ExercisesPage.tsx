@@ -1,8 +1,12 @@
-import { useState, useRef } from 'react'
-import { Search, Dumbbell, X, AlertCircle } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Search, Dumbbell, X, AlertCircle, Heart } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
+import { AppHeader } from '../../components/AppHeader'
 import {
   getExercise,
+  getFavoriteIds,
+  addFavorite,
+  removeFavorite,
   type ExerciseDetail,
   type MuscleGroup,
 } from '../../lib/api'
@@ -236,10 +240,22 @@ export function ExercisesPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | null>(null)
+  const [isCombined, setIsCombined] = useState<boolean | undefined>(undefined)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Favorites state
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+
   const { exercises, isLoading, isFetchingMore, error, sentinelRef, retry } =
-    useInfiniteExercises(search, muscleFilter)
+    useInfiniteExercises(search, muscleFilter, isCombined)
+
+  // Load favorites on mount
+  useEffect(() => {
+    getFavoriteIds()
+      .then((ids) => setFavoriteIds(new Set(ids)))
+      .catch(() => { /* silently ignore — favorites are non-critical */ })
+  }, [])
 
   // Detail sheet state
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -274,11 +290,29 @@ export function ExercisesPage() {
     setDetail(null)
   }
 
+  async function toggleFavorite(exerciseId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    const isFav = favoriteIds.has(exerciseId)
+    setFavoriteIds((prev) => {
+      const next = new Set(prev)
+      isFav ? next.delete(exerciseId) : next.add(exerciseId)
+      return next
+    })
+    try {
+      isFav ? await removeFavorite(exerciseId) : await addFavorite(exerciseId)
+    } catch {
+      // Revert optimistic update on failure
+      setFavoriteIds((prev) => {
+        const next = new Set(prev)
+        isFav ? next.add(exerciseId) : next.delete(exerciseId)
+        return next
+      })
+    }
+  }
+
   return (
     <div className="phone-shell">
-      <header className="app-header">
-        <span className="header-title">Exercises</span>
-      </header>
+      <AppHeader title="Exercises" />
 
       <div className="content" style={{ paddingBottom: 80 }}>
         {/* Search */}
@@ -296,10 +330,22 @@ export function ExercisesPage() {
         {/* Muscle group filter chips */}
         <div className="tab-pills">
           <button
-            className={`tab-pill${muscleFilter === null ? ' active' : ''}`}
-            onClick={() => handleMuscleFilter(null)}
+            className={`tab-pill${muscleFilter === null && !isCombined && !favoritesOnly ? ' active' : ''}`}
+            onClick={() => { handleMuscleFilter(null); setIsCombined(undefined); setFavoritesOnly(false) }}
           >
             All
+          </button>
+          <button
+            className={`tab-pill${favoritesOnly ? ' active' : ''}`}
+            onClick={() => setFavoritesOnly((prev) => !prev)}
+          >
+            Favorites
+          </button>
+          <button
+            className={`tab-pill${isCombined ? ' active' : ''}`}
+            onClick={() => setIsCombined(isCombined ? undefined : true)}
+          >
+            Combined
           </button>
           {MUSCLE_GROUPS.map(({ key, label }) => (
             <button
@@ -343,7 +389,7 @@ export function ExercisesPage() {
             <div style={{ fontSize: 48 }}>🏋️</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>No exercises found</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              {search || muscleFilter ? 'Try adjusting your search or filter.' : 'No exercises in the library yet.'}
+              {search || muscleFilter || isCombined ? 'Try adjusting your search or filter.' : 'No exercises in the library yet.'}
             </div>
           </div>
         )}
@@ -351,8 +397,11 @@ export function ExercisesPage() {
         {/* Exercise list */}
         {!isLoading && !error && exercises.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {exercises.map((ex) => {
+            {exercises
+              .filter((ex) => !favoritesOnly || favoriteIds.has(ex.id))
+              .map((ex) => {
               const color = getMuscleColor(ex.primaryMuscle)
+              const isFav = favoriteIds.has(ex.id)
               return (
                 <div
                   key={ex.id}
@@ -409,6 +458,20 @@ export function ExercisesPage() {
                       {toLabel(ex.primaryMuscle)}
                     </span>
                   </div>
+
+                  {/* Favorite button */}
+                  <button
+                    onClick={(e) => toggleFavorite(ex.id, e)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: '4px 8px',
+                      color: isFav ? '#f87171' : 'var(--text-muted)',
+                      display: 'flex', alignItems: 'center', flexShrink: 0,
+                    }}
+                    aria-label="Toggle favorite"
+                  >
+                    <Heart size={16} fill={isFav ? '#f87171' : 'none'} />
+                  </button>
                 </div>
               )
             })}

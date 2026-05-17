@@ -172,7 +172,7 @@ export function CreateWorkoutPage() {
     isLoading: isSearching,
     isFetchingMore: isPickerFetchingMore,
     sentinelRef: pickerSentinelRef,
-  } = useInfiniteExercises(pickerSearch, null, pickerScrollRef)
+  } = useInfiniteExercises(pickerSearch, null, undefined, pickerScrollRef)
 
   function handlePickerSearchChange(value: string) {
     setPickerSearchInput(value)

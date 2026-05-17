@@ -178,6 +178,89 @@ export interface UserStats {
   lastSessionAt: string | null
 }
 
+// ── Profile API ───────────────────────────────────────────────────────────────
+
+import type { UserProfile, BodyMeasurement, AddMeasurementBody, HealthMessageBody, HealthReport, UserGoals, SaveGoalsBody } from '../types/profile'
+
+export function getMyProfile(): Promise<{ profile: UserProfile; latestMeasurement: BodyMeasurement | null }> {
+  return request('/users/me/profile')
+}
+
+export function updateMyProfile(body: { heightCm?: number }): Promise<UserProfile> {
+  return request('/users/me/profile', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export async function uploadAvatar(file: File): Promise<UserProfile> {
+  const token = getToken()
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`${API_BASE}/users/me/avatar`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  })
+
+  if (res.status === 401) {
+    const refreshed = await tryRefresh()
+    if (refreshed) return uploadAvatar(file)
+    clearAuth()
+    window.dispatchEvent(new Event('fitapp:unauthorized'))
+    throw new Error('Unauthorized')
+  }
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`
+    try {
+      const body = await res.json() as { message?: string }
+      if (body.message) message = body.message
+    } catch { /* ignore */ }
+    throw new Error(message)
+  }
+
+  return res.json() as Promise<UserProfile>
+}
+
+export function addMeasurement(body: AddMeasurementBody): Promise<BodyMeasurement> {
+  return request('/users/me/measurements', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getMeasurementHistory(): Promise<{ data: BodyMeasurement[] }> {
+  return request('/users/me/measurements')
+}
+
+export function generateHealthMessage(body: HealthMessageBody): Promise<{ report: HealthReport }> {
+  return request('/users/me/health-message', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getHealthReports(): Promise<{ data: HealthReport[] }> {
+  return request('/users/me/health-reports')
+}
+
+export function getGoals(): Promise<{ goals: UserGoals | null }> {
+  return request('/users/me/goals')
+}
+
+export function saveGoals(body: SaveGoalsBody): Promise<{ goals: UserGoals }> {
+  return request('/users/me/goals', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function getMyStats(): Promise<UserStats> {
   return request('/sessions/mine/stats')
 }
@@ -210,6 +293,18 @@ export interface SessionInsights {
 
 export function getMyInsights(days = 30): Promise<SessionInsights> {
   return request(`/sessions/mine/insights?days=${days}`)
+}
+
+export interface ExerciseRecord {
+  exerciseId: string
+  name: string
+  sessionCount: number
+  maxWeightKg: number | null
+  maxRepsInSet: number | null
+}
+
+export function getExerciseRecords(): Promise<{ data: ExerciseRecord[] }> {
+  return request('/sessions/mine/exercise-records')
 }
 
 export interface StartSessionResponse {
@@ -299,10 +394,12 @@ export function listExercises(
   page = 1,
   limit = 50,
   primaryMuscle?: string,
+  isCombined?: boolean,
 ): Promise<ExercisesListResponse> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) })
   if (search) params.set('search', search)
   if (primaryMuscle) params.set('primaryMuscle', primaryMuscle)
+  if (isCombined) params.set('isCombined', 'true')
   return request(`/exercises?${params}`)
 }
 
@@ -576,4 +673,18 @@ export function getCollectionsForWorkout(workoutId: string): Promise<{ collectio
 
 export function getCollectionWorkoutIds(collectionId: string): Promise<{ workoutIds: string[] }> {
   return request(`/collections/${collectionId}/workouts`)
+}
+
+// ── Exercise Favorites ────────────────────────────────────────────────────────
+
+export function getFavoriteIds(): Promise<string[]> {
+  return request<{ ids: string[] }>('/exercises/favorites').then((data) => data.ids)
+}
+
+export function addFavorite(exerciseId: string): Promise<void> {
+  return request<void>(`/exercises/${exerciseId}/favorite`, { method: 'POST' })
+}
+
+export function removeFavorite(exerciseId: string): Promise<void> {
+  return request<void>(`/exercises/${exerciseId}/favorite`, { method: 'DELETE' })
 }

@@ -169,7 +169,7 @@ export function EditWorkoutPage() {
     isLoading: isSearching,
     isFetchingMore: isPickerFetchingMore,
     sentinelRef: pickerSentinelRef,
-  } = useInfiniteExercises(pickerSearch, null, pickerScrollRef)
+  } = useInfiniteExercises(pickerSearch, null, undefined, pickerScrollRef)
 
   // Load workout data into form
   useEffect(() => {

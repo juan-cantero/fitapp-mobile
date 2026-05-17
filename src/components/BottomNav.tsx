@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Home, Dumbbell, BookOpen, TrendingUp, Trophy } from 'lucide-react'
+import { Home, Dumbbell, BookOpen, TrendingUp } from 'lucide-react'
 
 export function BottomNav() {
   return (
@@ -19,10 +19,6 @@ export function BottomNav() {
       <NavLink to="/progress" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>
         <TrendingUp size={22} strokeWidth={1.8} />
         <span>Progress</span>
-      </NavLink>
-      <NavLink to="/challenges" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>
-        <Trophy size={22} strokeWidth={1.8} />
-        <span>Challenges</span>
       </NavLink>
     </nav>
   )

@@ -6,6 +6,7 @@ const PAGE_SIZE = 20
 export function useInfiniteExercises(
   search: string,
   muscleFilter?: MuscleGroup | null,
+  isCombined?: boolean,
   scrollRoot?: React.RefObject<HTMLElement | null>,
 ) {
   const [exercises, setExercises] = useState<ExerciseBasic[]>([])
@@ -27,7 +28,7 @@ export function useInfiniteExercises(
     setTotal(0)
     setPage(1)
 
-    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined)
+    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
       .then((res) => {
         if (cancelled) return
         setExercises(res.data)
@@ -40,7 +41,7 @@ export function useInfiniteExercises(
       .finally(() => { if (!cancelled) setIsLoading(false) })
 
     return () => { cancelled = true }
-  }, [search, muscleFilter])
+  }, [search, muscleFilter, isCombined])
 
   // Keep loadMore in a ref so the observer never stales
   const loadMoreRef = useRef<() => void>(() => {})
@@ -48,7 +49,7 @@ export function useInfiniteExercises(
     if (isFetchingMore || !hasMore) return
     setIsFetchingMore(true)
     const nextPage = page + 1
-    listExercises(search || undefined, nextPage, PAGE_SIZE, muscleFilter ?? undefined)
+    listExercises(search || undefined, nextPage, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
       .then((res) => {
         setExercises((prev) => [...prev, ...res.data])
         setTotal(res.total)
@@ -73,7 +74,7 @@ export function useInfiniteExercises(
   const retry = () => {
     setIsLoading(true)
     setError(null)
-    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined)
+    listExercises(search || undefined, 1, PAGE_SIZE, muscleFilter ?? undefined, isCombined)
       .then((res) => { setExercises(res.data); setTotal(res.total); setPage(1) })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
       .finally(() => setIsLoading(false))

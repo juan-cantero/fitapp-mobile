@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Pause, Play } from 'lucide-react'
 import {
   getWorkout,
   startSession,
@@ -179,6 +179,8 @@ export function GuidedWorkoutPage() {
   const [totalRestSeconds, setTotalRestSeconds] = useState(0)
   const [exerciseSecondsLeft, setExerciseSecondsLeft] = useState(0)
   const [totalExerciseSeconds, setTotalExerciseSeconds] = useState(0)
+  const [isTimerPaused, setIsTimerPaused] = useState(false)
+  const isTimerPausedRef = useRef(false)
   const [getReadyCount, setGetReadyCount] = useState(3)
   const [weightInput, setWeightInput] = useState('')
   const [setsLogged, setSetsLogged] = useState(0)
@@ -421,19 +423,25 @@ export function GuidedWorkoutPage() {
     const currentEx = flatExercisesRef.current[exerciseIndexRef.current]
     if (!currentEx?.durationSeconds) return
 
-    // Start the exercise countdown
+    // Start the exercise countdown (always unpaused at start)
     const dur = currentEx.durationSeconds
     setExerciseSecondsLeft(dur)
     setTotalExerciseSeconds(dur)
+    setIsTimerPaused(false)
+    isTimerPausedRef.current = false
 
     const interval = setInterval(() => {
+      if (isTimerPausedRef.current) return
       setExerciseSecondsLeft((s) => {
+        const next = s - 1
+        if (next <= 3 && next >= 1) playBeep(660, 0.12)
         if (s <= 1) {
+          playBeep(1100, 0.9)
           clearInterval(interval)
           setTimeout(() => handleCompleteSetRef.current(), 0)
           return 0
         }
-        return s - 1
+        return next
       })
     }, 1000)
 
@@ -812,7 +820,10 @@ export function GuidedWorkoutPage() {
             {ex.durationSeconds ? (
               /* ---- Timer-based exercise ---- */
               <>
-                <div className="rest-ring-container" style={{ margin: '0 auto' }}>
+                <div
+                  className="rest-ring-container"
+                  style={{ margin: '0 auto', opacity: isTimerPaused ? 0.5 : 1, transition: 'opacity 0.2s' }}
+                >
                   <svg className="rest-ring-svg" viewBox="0 0 180 180">
                     <circle className="rest-ring-bg" cx="90" cy="90" r="80" />
                     <circle
@@ -830,9 +841,30 @@ export function GuidedWorkoutPage() {
                     <div className="rest-countdown" style={{ color: 'var(--success)' }}>
                       {exerciseSecondsLeft}
                     </div>
-                    <div className="rest-label">HOLD</div>
+                    <div className="rest-label">{isTimerPaused ? 'PAUSED' : 'HOLD'}</div>
                   </div>
                 </div>
+
+                <button
+                  onClick={() => {
+                    const next = !isTimerPaused
+                    setIsTimerPaused(next)
+                    isTimerPausedRef.current = next
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    margin: '12px auto 0',
+                    padding: '10px 24px',
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    color: 'var(--text-muted)',
+                    fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  {isTimerPaused ? <Play size={16} /> : <Pause size={16} />}
+                  {isTimerPaused ? 'Resume' : 'Pause'}
+                </button>
 
                 {ex.notes && <div className="exercise-note">{ex.notes}</div>}
               </>

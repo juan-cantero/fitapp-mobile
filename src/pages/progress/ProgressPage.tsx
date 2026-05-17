@@ -1,15 +1,19 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronLeft, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { ChevronRight, ChevronLeft, ChevronDown, ChevronUp, RefreshCw, Download, Share2 } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
+import { downloadMarkdown, weeklyReportToMarkdown } from '../../lib/markdown'
+import { AppHeader } from '../../components/AppHeader'
 import { BodyMapFront, BodyMapBack } from '../../components/BodyMap'
 import {
   getMyStats, getMySessions, getMyInsights,
   getWeekMuscleCoverage, getSessionMuscles, getWeeklyPlan, generateWeeklyPlan,
+  getExerciseRecords, getSession,
 } from '../../lib/api'
 import type {
-  UserStats, Session, SessionInsights,
+  UserStats, Session, SessionInsights, ExerciseInsight,
   WeekMuscleCoverage, SessionMuscleBreakdown, WeeklyPlan, PlanGoalType, SplitValue, ObjectiveValue,
+  ExerciseRecord,
 } from '../../lib/api'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -297,6 +301,304 @@ function WorkoutTypeDonut({ muscles }: { muscles: { muscle: string; sets: number
   )
 }
 
+// ── Canvas share image ────────────────────────────────────────────────────────
+
+const SHARE_MUSCLE_LABELS: Record<string, string> = {
+  chest: 'Chest', back: 'Back', shoulders: 'Shoulders',
+  biceps: 'Biceps', triceps: 'Triceps', forearms: 'Forearms',
+  quads: 'Quads', hamstrings: 'Hamstrings', glutes: 'Glutes',
+  calves: 'Calves', core: 'Core', adductors: 'Adductors', abductors: 'Abductors',
+}
+
+const SHARE_MUSCLE_COLORS: Record<string, string> = {
+  chest: '#FF6B35', back: '#5AC8FA', shoulders: '#FFB830',
+  biceps: '#30D158', triceps: '#BF5AF2', quads: '#FF6B35',
+  hamstrings: '#5AC8FA', glutes: '#FFB830', core: '#30D158',
+  calves: '#BF5AF2', forearms: '#FF9500', adductors: '#64D2FF', abductors: '#FFD60A',
+}
+
+async function svgToImg(container: HTMLDivElement): Promise<HTMLImageElement> {
+  const svgEl = container.querySelector('svg')
+  if (!svgEl) throw new Error('no svg')
+  let svgStr = new XMLSerializer().serializeToString(svgEl)
+  if (!svgStr.includes('xmlns=')) {
+    svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
+  }
+  const b64 = btoa(unescape(encodeURIComponent(svgStr)))
+  const dataUrl = `data:image/svg+xml;base64,${b64}`
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
+
+function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
+async function buildShareImage(
+  weekData: WeekMuscleCoverage,
+  weekSessions: Session[],
+  totalSets: number,
+  topExercises: ExerciseInsight[],
+  frontEl: HTMLDivElement | null,
+  backEl: HTMLDivElement | null,
+): Promise<Blob> {
+  const W = 1080, H = 1920
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  const BG = '#0f0f0f', SURFACE = '#1a1a1a', SURFACE2 = '#252525'
+  const PRIMARY = '#FF6B35', WHITE = '#ffffff', MUTED = '#888888', BORDER = '#2a2a2a'
+  const PAD = 56
+
+  ctx.fillStyle = BG
+  ctx.fillRect(0, 0, W, H)
+
+  function fmtDate(iso: string) {
+    return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+  function fmtDur(secs: number) {
+    const m = Math.round(secs / 60)
+    return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min`
+  }
+  function fmtDay(isoStr: string) {
+    return new Date(isoStr).toLocaleDateString('en-US', { weekday: 'short' })
+  }
+  function sectionHeader(label: string, yPos: number) {
+    ctx.fillStyle = MUTED
+    ctx.font = '700 26px system-ui, sans-serif'
+    ctx.fillText(label, PAD, yPos)
+    const lw = ctx.measureText(label).width + 20
+    ctx.strokeStyle = BORDER
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(PAD + lw, yPos - 6)
+    ctx.lineTo(W - PAD, yPos - 6)
+    ctx.stroke()
+  }
+
+  const weekLabel = `${fmtDate(weekData.weekStart)} – ${fmtDate(weekData.weekEnd)}`
+
+  // ── Header ──
+  let y = 90
+  ctx.fillStyle = PRIMARY
+  ctx.beginPath()
+  ctx.arc(PAD + 10, y + 10, 10, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = WHITE
+  ctx.font = '800 38px system-ui, sans-serif'
+  ctx.fillText('FITAPP', PAD + 26, y + 19)
+  ctx.fillStyle = MUTED
+  ctx.font = '600 26px system-ui, sans-serif'
+  ctx.textAlign = 'right'
+  ctx.fillText(weekLabel, W - PAD, y + 19)
+  ctx.textAlign = 'left'
+  y += 70
+
+  // ── Stats bubbles ──
+  const bubbles = [
+    { value: weekData.totalSessions, label: 'sessions' },
+    { value: weekData.muscles.length, label: 'muscles' },
+    { value: totalSets, label: 'sets' },
+  ]
+  const bGap = 18
+  const bW = (W - PAD * 2 - bGap * 2) / 3
+  const bH = 140
+  for (let i = 0; i < 3; i++) {
+    const bx = PAD + i * (bW + bGap)
+    ctx.fillStyle = SURFACE
+    rrect(ctx, bx, y, bW, bH, 28)
+    ctx.fill()
+    ctx.strokeStyle = BORDER
+    ctx.lineWidth = 1.5
+    rrect(ctx, bx, y, bW, bH, 28)
+    ctx.stroke()
+    ctx.fillStyle = WHITE
+    ctx.font = '800 60px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(String(bubbles[i].value), bx + bW / 2, y + 73)
+    ctx.fillStyle = MUTED
+    ctx.font = '500 22px system-ui, sans-serif'
+    ctx.fillText(bubbles[i].label, bx + bW / 2, y + 107)
+  }
+  ctx.textAlign = 'left'
+  y += bH + 44
+
+  // ── Body maps ──
+  const mapH = 420
+  const mapW = (W - PAD * 2 - 20) / 2
+  let frontImg: HTMLImageElement | null = null
+  let backImg: HTMLImageElement | null = null
+  if (frontEl) { try { frontImg = await svgToImg(frontEl) } catch { /* skip */ } }
+  if (backEl) { try { backImg = await svgToImg(backEl) } catch { /* skip */ } }
+  if (frontImg) ctx.drawImage(frontImg, PAD, y, mapW, mapH)
+  if (backImg) ctx.drawImage(backImg, PAD + mapW + 20, y, mapW, mapH)
+  y += mapH + 44
+
+  // ── Sessions ──
+  sectionHeader('SESSIONS', y)
+  y += 34
+  const sortedSessions = [...weekSessions].sort(
+    (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+  ).slice(0, 5)
+  const rowH = 52
+  for (const s of sortedSessions) {
+    // Row background
+    ctx.fillStyle = SURFACE
+    rrect(ctx, PAD, y, W - PAD * 2, rowH, 14)
+    ctx.fill()
+    // Orange dot
+    ctx.fillStyle = PRIMARY
+    ctx.beginPath()
+    ctx.arc(PAD + 20, y + rowH / 2, 6, 0, Math.PI * 2)
+    ctx.fill()
+    // Day label
+    ctx.fillStyle = MUTED
+    ctx.font = '600 24px system-ui, sans-serif'
+    const dayStr = fmtDay(s.startedAt)
+    ctx.fillText(dayStr, PAD + 36, y + rowH / 2 + 9)
+    const dayW = ctx.measureText(dayStr).width
+    // Separator dot
+    ctx.fillStyle = BORDER
+    ctx.beginPath()
+    ctx.arc(PAD + 36 + dayW + 14, y + rowH / 2, 3, 0, Math.PI * 2)
+    ctx.fill()
+    // Workout name
+    ctx.fillStyle = WHITE
+    ctx.font = '600 24px system-ui, sans-serif'
+    const nameX = PAD + 36 + dayW + 30
+    // Truncate name to fit
+    const durStr = s.durationSeconds ? fmtDur(s.durationSeconds) : ''
+    const durW = durStr ? ctx.measureText(durStr).width + 20 : 0
+    const maxNameW = W - PAD - nameX - durW - PAD
+    let name = s.workoutName
+    while (name.length > 1 && ctx.measureText(name).width > maxNameW) name = name.slice(0, -1)
+    if (name !== s.workoutName) name = name.slice(0, -1) + '…'
+    ctx.fillText(name, nameX, y + rowH / 2 + 9)
+    // Duration (right)
+    if (durStr) {
+      ctx.fillStyle = PRIMARY
+      ctx.font = '700 24px system-ui, sans-serif'
+      ctx.textAlign = 'right'
+      ctx.fillText(durStr, W - PAD - 16, y + rowH / 2 + 9)
+      ctx.textAlign = 'left'
+    }
+    y += rowH + 8
+  }
+  y += 36
+
+  // ── Top Exercises ──
+  const topEx = topExercises.slice(0, 4)
+  if (topEx.length > 0) {
+    sectionHeader('TOP EXERCISES', y)
+    y += 34
+    const trackW = W - PAD * 2
+    const maxExSets = Math.max(...topEx.map(e => e.totalSets), 1)
+    for (let i = 0; i < topEx.length; i++) {
+      const ex = topEx[i]
+      // Rank badge
+      ctx.fillStyle = SURFACE2
+      rrect(ctx, PAD, y - 2, 40, 36, 8)
+      ctx.fill()
+      ctx.fillStyle = PRIMARY
+      ctx.font = '700 22px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(String(i + 1), PAD + 20, y + 23)
+      ctx.textAlign = 'left'
+      // Name
+      ctx.fillStyle = WHITE
+      ctx.font = '600 26px system-ui, sans-serif'
+      ctx.fillText(ex.name, PAD + 52, y + 22)
+      // Meta (sets + max weight) right
+      const metaParts: string[] = []
+      metaParts.push(`${ex.totalSets} sets`)
+      if (ex.maxWeightKg != null) metaParts.push(`max ${ex.maxWeightKg} kg`)
+      ctx.fillStyle = MUTED
+      ctx.font = '500 22px system-ui, sans-serif'
+      ctx.textAlign = 'right'
+      ctx.fillText(metaParts.join(' · '), W - PAD, y + 22)
+      ctx.textAlign = 'left'
+      y += 18
+      // Progress bar
+      ctx.fillStyle = SURFACE2
+      rrect(ctx, PAD, y, trackW, 10, 5)
+      ctx.fill()
+      ctx.fillStyle = PRIMARY
+      rrect(ctx, PAD, y, Math.round((ex.totalSets / maxExSets) * trackW), 10, 5)
+      ctx.fill()
+      y += 52
+    }
+    y += 24
+  }
+
+  // ── Top Muscles ──
+  const topMuscles = [...weekData.muscles].sort((a, b) => b.sets - a.sets).slice(0, 4)
+  if (topMuscles.length > 0) {
+    const trackW = W - PAD * 2
+    sectionHeader('TOP MUSCLES', y)
+    y += 34
+    const maxSets = Math.max(...topMuscles.map(m => m.sets), 1)
+    for (const { muscle, sets } of topMuscles) {
+      const color = SHARE_MUSCLE_COLORS[muscle] ?? PRIMARY
+      const label = SHARE_MUSCLE_LABELS[muscle] ?? muscle
+      ctx.fillStyle = WHITE
+      ctx.font = '600 26px system-ui, sans-serif'
+      ctx.fillText(label, PAD, y)
+      ctx.fillStyle = MUTED
+      ctx.font = '500 24px system-ui, sans-serif'
+      ctx.textAlign = 'right'
+      ctx.fillText(`${sets} sets`, W - PAD, y)
+      ctx.textAlign = 'left'
+      y += 14
+      ctx.fillStyle = SURFACE2
+      rrect(ctx, PAD, y, trackW, 12, 6)
+      ctx.fill()
+      ctx.fillStyle = color
+      rrect(ctx, PAD, y, Math.round((sets / maxSets) * trackW), 12, 6)
+      ctx.fill()
+      y += 52
+    }
+  }
+
+  // ── Footer ──
+  const footerY = H - 72
+  ctx.strokeStyle = BORDER
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(PAD, footerY)
+  ctx.lineTo(W - PAD, footerY)
+  ctx.stroke()
+  ctx.fillStyle = MUTED
+  ctx.font = '400 24px system-ui, sans-serif'
+  ctx.fillText('#training #fitness #workout', PAD, footerY + 34)
+  ctx.font = '700 24px system-ui, sans-serif'
+  ctx.textAlign = 'right'
+  ctx.fillText('fitapp', W - PAD - 22, footerY + 34)
+  ctx.fillStyle = PRIMARY
+  ctx.beginPath()
+  ctx.arc(W - PAD - 8, footerY + 23, 8, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.textAlign = 'left'
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (blob) resolve(blob)
+      else reject(new Error('toBlob failed'))
+    }, 'image/png')
+  })
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 type Tab = 'stats' | 'plan'
@@ -310,6 +612,7 @@ export function ProgressPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [insights, setInsights] = useState<SessionInsights | null>(null)
   const [weekInsights, setWeekInsights] = useState<SessionInsights | null>(null)
+  const [exerciseRecords, setExerciseRecords] = useState<ExerciseRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Week coverage state
@@ -343,12 +646,13 @@ export function ProgressPage() {
 
   const fetchStats = useCallback(() => {
     setIsLoading(true)
-    Promise.allSettled([getMyStats(), getMySessions(1, 20), getMyInsights(30), getMyInsights(7)])
-      .then(([s, sess, ins, wIns]) => {
+    Promise.allSettled([getMyStats(), getMySessions(1, 20), getMyInsights(30), getMyInsights(7), getExerciseRecords()])
+      .then(([s, sess, ins, wIns, recs]) => {
         if (s.status === 'fulfilled') setStats(s.value)
         if (sess.status === 'fulfilled') setSessions(sess.value.data)
         if (ins.status === 'fulfilled') setInsights(ins.value)
         if (wIns.status === 'fulfilled') setWeekInsights(wIns.value)
+        if (recs.status === 'fulfilled') setExerciseRecords(recs.value.data)
       })
       .finally(() => setIsLoading(false))
   }, [])
@@ -394,6 +698,58 @@ export function ProgressPage() {
     }
   }
 
+  // ── Report download ────────────────────────────────────────────────────────
+
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  // ── Share weekly progress ──────────────────────────────────────────────────
+
+  const frontMapRef = useRef<HTMLDivElement>(null)
+  const backMapRef = useRef<HTMLDivElement>(null)
+  const [isSharing, setIsSharing] = useState(false)
+
+  async function handleDownloadReport() {
+    if (!weekData || isDownloading) return
+    setIsDownloading(true)
+    try {
+      const start = new Date(weekData.weekStart + 'T00:00:00')
+      const end = new Date(start)
+      end.setDate(end.getDate() + 6)
+      end.setHours(23, 59, 59)
+      const weekSessions = sessions.filter(s => {
+        const d = new Date(s.startedAt)
+        return d >= start && d <= end
+      })
+      const detailed = await Promise.all(weekSessions.map(s => getSession(s.id)))
+      downloadMarkdown(
+        weeklyReportToMarkdown(detailed, weekData.weekStart),
+        `weekly-report-${weekData.weekStart}.md`,
+      )
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  async function handleShare() {
+    if (!weekData || isSharing) return
+    setIsSharing(true)
+    try {
+      const blob = await buildShareImage(weekData, weekSessions, weekTotalSets, weekInsights?.topExercises ?? [], frontMapRef.current, backMapRef.current)
+      const file = new File([blob], `fitapp-week-${weekData.weekStart}.png`, { type: 'image/png' })
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'My Weekly Training Progress' })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = file.name
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    } catch { /* user cancelled or error */ }
+    finally { setIsSharing(false) }
+  }
+
   // ── Plan generation ────────────────────────────────────────────────────────
 
   async function generate() {
@@ -429,13 +785,34 @@ export function ProgressPage() {
     : (insights?.topMuscles ?? [])
   const maxMuscleSets = Math.max(...muscleDisplayData.map(m => m.sets), 1)
 
+  // ── Share card data ────────────────────────────────────────────────────────
+
+  const weekSessions = sessions.filter(s => {
+    if (!weekData) return false
+    const d = new Date(s.startedAt)
+    const start = new Date(weekData.weekStart + 'T00:00:00')
+    const end = new Date(weekData.weekEnd + 'T23:59:59')
+    return d >= start && d <= end
+  })
+  const weekTotalSets = weekData ? weekData.muscles.reduce((sum, m) => sum + m.sets, 0) : 0
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="phone-shell">
-      <header className="app-header">
-        <span className="header-title">Progress</span>
-      </header>
+      <AppHeader title="Progress" />
+
+      {/* Off-screen body maps for canvas share image */}
+      <div style={{ position: 'fixed', left: -9999, top: 0, width: 300, height: 400, pointerEvents: 'none', opacity: 0 }}>
+        <div ref={frontMapRef} style={{ width: 300, height: 400 }}>
+          <BodyMapFront muscles={weekData?.muscles ?? []} />
+        </div>
+      </div>
+      <div style={{ position: 'fixed', left: -9999, top: 0, width: 300, height: 400, pointerEvents: 'none', opacity: 0 }}>
+        <div ref={backMapRef} style={{ width: 300, height: 400 }}>
+          <BodyMapBack muscles={weekData?.muscles ?? []} />
+        </div>
+      </div>
 
       {/* Tab bar */}
       <div style={{
@@ -511,13 +888,25 @@ export function ProgressPage() {
                     {weekData ? `${weekData.totalSessions} session${weekData.totalSessions !== 1 ? 's' : ''}` : ''}
                   </div>
                 </div>
-                <button
-                  onClick={() => setWeekOffset(w => Math.min(w + 1, 0))}
-                  disabled={weekOffset >= 0}
-                  style={{ background: 'none', border: 'none', padding: 4, cursor: weekOffset >= 0 ? 'not-allowed' : 'pointer', color: weekOffset >= 0 ? 'var(--border)' : 'var(--text-muted)', display: 'flex', opacity: weekOffset >= 0 ? 0.3 : 1 }}
-                >
-                  <ChevronRight size={18} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    onClick={() => setWeekOffset(w => Math.min(w + 1, 0))}
+                    disabled={weekOffset >= 0}
+                    style={{ background: 'none', border: 'none', padding: 4, cursor: weekOffset >= 0 ? 'not-allowed' : 'pointer', color: weekOffset >= 0 ? 'var(--border)' : 'var(--text-muted)', display: 'flex', opacity: weekOffset >= 0 ? 0.3 : 1 }}
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                  {weekData && (
+                    <button
+                      onClick={() => void handleDownloadReport()}
+                      disabled={isDownloading}
+                      aria-label="Download weekly report as markdown"
+                      style={{ background: 'none', border: 'none', padding: 4, cursor: isDownloading ? 'wait' : 'pointer', color: isDownloading ? 'var(--primary)' : 'var(--text-muted)', display: 'flex', opacity: isDownloading ? 0.6 : 1 }}
+                    >
+                      <Download size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Front / Back toggle */}
@@ -558,6 +947,26 @@ export function ProgressPage() {
                 </div>
               )}
             </div>
+
+            {/* Share button */}
+            {!weekLoading && weekData && (
+              <button
+                onClick={() => void handleShare()}
+                disabled={isSharing}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  width: '100%', padding: '12px 0',
+                  marginBottom: 8,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 14, cursor: isSharing ? 'wait' : 'pointer',
+                  fontSize: 14, fontWeight: 700, color: isSharing ? 'var(--primary)' : 'var(--text)',
+                  opacity: isSharing ? 0.7 : 1,
+                }}
+              >
+                <Share2 size={16} color={isSharing ? 'var(--primary)' : '#FF6B35'} />
+                {isSharing ? 'Generating...' : 'Share progress'}
+              </button>
+            )}
 
             {/* Week insight */}
             {!weekLoading && weekData && <WeekInsightCard muscles={weekData.muscles} />}
@@ -721,6 +1130,51 @@ export function ProgressPage() {
                   )
                 })()}
               </div>
+            )}
+
+            {/* Top exercises PRs */}
+            {exerciseRecords.length > 0 && (
+              <>
+                <div className="section-header">
+                  <span className="section-title">Top Exercises</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+                  {exerciseRecords.map((rec) => (
+                    <div key={rec.exerciseId} style={{
+                      background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 14, padding: '12px 14px',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {rec.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {rec.sessionCount} {rec.sessionCount === 1 ? 'session' : 'sessions'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        {rec.maxWeightKg != null && (
+                          <div style={{ textAlign: 'center', background: 'var(--surface-2)', borderRadius: 10, padding: '6px 10px', minWidth: 52 }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--primary)', lineHeight: 1 }}>
+                              {rec.maxWeightKg}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>kg PR</div>
+                          </div>
+                        )}
+                        {rec.maxRepsInSet != null && (
+                          <div style={{ textAlign: 'center', background: 'var(--surface-2)', borderRadius: 10, padding: '6px 10px', minWidth: 52 }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: '#30D158', lineHeight: 1 }}>
+                              {rec.maxRepsInSet}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>reps PR</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
 
             {/* Recent sessions — expandable */}

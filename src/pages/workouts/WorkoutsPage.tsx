@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Clock, Dumbbell, ChevronRight, Plus, AlertCircle, Lock, Globe, BookMarked, X, Check } from 'lucide-react'
 import { BottomNav } from '../../components/BottomNav'
+import { AppHeader } from '../../components/AppHeader'
 import {
   listWorkouts, listMyWorkouts, type Workout,
   listCollections, createCollection, deleteCollection, addWorkoutToCollection,
@@ -375,25 +376,26 @@ export function WorkoutsPage() {
 
   return (
     <div className="phone-shell">
-      {/* Header */}
-      <header className="app-header">
-        <span className="header-title">Workouts</span>
-        <button
-          className="header-action-btn"
-          aria-label="New workout"
-          onClick={() => navigate('/workouts/new')}
-        >
-          <Plus size={16} />
-          New
-        </button>
-      </header>
+      <AppHeader
+        title="Workouts"
+        action={
+          <button
+            className="header-action-btn"
+            aria-label="New workout"
+            onClick={() => navigate('/workouts/new')}
+          >
+            <Plus size={16} />
+            New
+          </button>
+        }
+      />
 
       <div className="content">
 
-        {/* AI generator banner */}
+        {/* Challenges banner */}
         <button
           type="button"
-          onClick={() => navigate('/workouts/generate')}
+          onClick={() => navigate('/challenges')}
           style={{
             width: '100%',
             display: 'flex',
@@ -418,14 +420,14 @@ export function WorkoutsPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 20,
           }}>
-            ✨
+            🏆
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
-              Generate with AI
+              Challenges
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              Describe a workout and let AI build it
+              Compete and push your limits
             </div>
           </div>
           <div style={{ marginLeft: 'auto', color: 'var(--text-muted)', flexShrink: 0 }}>
