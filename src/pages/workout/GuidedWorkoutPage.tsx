@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { AlertCircle, Pause, Play } from 'lucide-react'
+import { AlertCircle, Pause, Play, SkipForward } from 'lucide-react'
 import {
   getWorkout,
   startSession,
@@ -864,26 +864,45 @@ export function GuidedWorkoutPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    const next = !isTimerPaused
-                    setIsTimerPaused(next)
-                    isTimerPausedRef.current = next
-                  }}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    margin: '12px auto 0',
-                    padding: '10px 24px',
-                    borderRadius: 12,
-                    border: '1px solid var(--border)',
-                    background: 'var(--surface)',
-                    color: 'var(--text-muted)',
-                    fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  {isTimerPaused ? <Play size={16} /> : <Pause size={16} />}
-                  {isTimerPaused ? 'Resume' : 'Pause'}
-                </button>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+                  <button
+                    onClick={() => {
+                      const next = !isTimerPaused
+                      setIsTimerPaused(next)
+                      isTimerPausedRef.current = next
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      padding: '10px 24px', borderRadius: 12,
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                      color: 'var(--text-muted)',
+                      fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    {isTimerPaused ? <Play size={16} /> : <Pause size={16} />}
+                    {isTimerPaused ? 'Resume' : 'Pause'}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      isTimerPausedRef.current = true
+                      setExerciseSecondsLeft(0)
+                      setTimeout(() => handleCompleteSetRef.current(), 0)
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      padding: '10px 24px', borderRadius: 12,
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface)',
+                      color: 'var(--text-muted)',
+                      fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    <SkipForward size={16} />
+                    Skip
+                  </button>
+                </div>
 
                 {ex.notes && <div className="exercise-note">{ex.notes}</div>}
               </>
